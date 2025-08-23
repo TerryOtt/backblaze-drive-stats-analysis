@@ -17,7 +17,6 @@ def _parse_args() -> argparse.Namespace:
     arg_parser.add_argument('computed_afr_csv',
                            help='CSV file with computed daily AFR')
 
-
     args: argparse.Namespace = arg_parser.parse_args()
 
     return args
@@ -42,7 +41,10 @@ def _generate_regex_map(args: argparse.Namespace) -> list[dict[str, str]]:
 
 
 def _clean_drive_model_str(drive_model_str: str) -> str:
-    # Remove leading/trailing whitespace, then convert one or more whitespace into single space
+    """Remove leading/trailing whitespace, then convert one or more whitespace into single space.
+    :param drive_model_str: Drive model string from CSV
+    :return: model string with all extra whitespace removed
+    """
     clean_str: str = re.sub(r'\s+', ' ', drive_model_str.strip())
     return clean_str
 
