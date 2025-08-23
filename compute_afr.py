@@ -11,11 +11,9 @@ def _parse_args() -> argparse.Namespace:
     arg_parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description='Compute annualized failure rate ("AFR")')
     arg_parser.add_argument('drive_model_families_json',
-                           help='JSON file with drive model family mappings')
-    arg_parser.add_argument('drive_stats_csv',
-                           help='CSV file with drive statistics')
-    arg_parser.add_argument('computed_afr_csv',
-                           help='CSV file with computed daily AFR')
+                            help='JSON file with drive model family mappings')
+    arg_parser.add_argument('drive_stats_csv', help='CSV file with drive statistics')
+    arg_parser.add_argument('computed_afr_csv', help='CSV file with computed daily AFR')
 
     args: argparse.Namespace = arg_parser.parse_args()
 
