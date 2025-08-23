@@ -19,11 +19,32 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _clean_drive_model_str(drive_model_str: str) -> str:
-    """Remove leading/trailing whitespace, then convert one or more whitespace into single space.
+    """Clean up whitespace and deal with inconconsistent model names.
     :param drive_model_str: Drive model string from CSV
     :return: model string with all extra whitespace removed
     """
     clean_str: str = re.sub(r'\s+', ' ', drive_model_str.strip())
+    model_string_tokens:list[str] = clean_str.split(' ')
+
+    # If there are multiple tokens and the final token matches a drive of interest, 
+    #    use the final token as the drive model as the data isn't consistent.
+    #    
+    # Example: raw data includes both "WUH721816ALE6L4" and "WDC WUH721816ALE6L4" models,
+    #          which are obviously the same thing. WOMP WOMP.
+    if len(model_string_tokens) > 1:
+	# Compare last token to regular expressions that are drives of interest
+	# 	If the regular expression matches, use final token as drive model
+        drive_models_of_interest_patterns: tuple(str, ...) = (
+            r'[HW]U[SH]72\d+',
+            r'ST\d+NM',
+            r'MG\d{2}',
+        )
+
+	# re.match only checks for matches at the start of the string, hence no need for ^ or \b
+        for curr_pattern in drive_models_of_interest_patterns:
+            if re.match( curr_pattern, model_string_tokens[-1] ):
+                return model_string_tokens[-1]
+
     return clean_str
 
 
@@ -38,7 +59,6 @@ def _parse_csv_data(args: argparse.Namespace) -> dict[str, dict[str, dict[str, i
 
         for curr_csv_row in csv_reader:
             drive_model: str = _clean_drive_model_str(curr_csv_row[0])
-            #print(f"Drive model: {drive_model}")
 
             if drive_model not in parsed_data:
                 parsed_data[drive_model]:dict[str, dict[str, int]] = {}
