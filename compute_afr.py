@@ -118,11 +118,11 @@ def _compute_afr_per_drive_model(
 
             computed_afr_data[ curr_drive_model_name ].append(
                 {
-                    "afr_percent"   : round(annualized_failure_rate * 100.0, 2),
-                    "date"          : curr_datapoint['date'],
-                    "day_index"     : curr_datapoint['day_index'],
-                    #"cumulative_drive_failures" : curr_datapoint['cumulative_drive_failures'],
-                    #"cumulative_drive_days"     : curr_datapoint['cumulative_drive_days'],
+                    "afr_percent"               : round(annualized_failure_rate * 100.0, 2),
+                    "cumulative_drive_failures" : curr_datapoint['cumulative_drive_failures'],
+                    "cumulative_drive_days"     : curr_datapoint['cumulative_drive_days'],
+                    "date"                      : curr_datapoint['date'],
+                    "day_index"                 : curr_datapoint['day_index'],
                 }
             )
 
@@ -142,6 +142,8 @@ def _write_afr_data_to_csv(args: argparse.Namespace,
             'drive_model',
             'day_index',
             'date',
+            'cumulative_drive_days',
+            'cumulative_drive_failures',
             'annualized_failure_rate_percent',
         )
         csv_writer.writerow(field_names)
@@ -154,6 +156,8 @@ def _write_afr_data_to_csv(args: argparse.Namespace,
                         curr_drive_model,
                         curr_afr_datapoint[ 'day_index' ],
                         curr_afr_datapoint[ 'date' ],
+                        curr_afr_datapoint[ 'cumulative_drive_days' ],
+                        curr_afr_datapoint[ 'cumulative_drive_failures' ],
                         f"{curr_afr_datapoint[ 'afr_percent' ]:.02f}",
                     )
 
