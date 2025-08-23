@@ -4,19 +4,21 @@ import argparse
 import csv
 import datetime
 import json
-import pprint
 import re
 
 
 def _parse_args() -> argparse.Namespace:
-    argparser: argparse.ArgumentParser = argparse.ArgumentParser(
+    arg_parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description='Compute annualized failure rate ("AFR")')
-    argparser.add_argument('drive_model_families_json',
+    arg_parser.add_argument('drive_model_families_json',
                            help='JSON file with drive model family mappings')
-    argparser.add_argument('drive_stats_csv',
+    arg_parser.add_argument('drive_stats_csv',
                            help='CSV file with drive statistics')
+    arg_parser.add_argument('computed_afr_csv',
+                           help='CSV file with computed daily AFR')
 
-    args: argparse.Namespace = argparser.parse_args()
+
+    args: argparse.Namespace = arg_parser.parse_args()
 
     return args
 
@@ -106,7 +108,7 @@ def _prep_csv_data_for_afr_calc(
         parsed_csv_data: dict[str, dict[str, dict[str, int]]] ) -> dict[str, list[dict[str, int | str]]]:
     """Take CSV data and move it to a list of dicts, with day index and cumulative stats. """
 
-    print("Prepping data")
+    #print("Prepping data")
 
     afr_prepped_data: dict[str, list[dict[str, int | str]]] = {}
 
@@ -140,20 +142,20 @@ def _prep_csv_data_for_afr_calc(
             )
             afr_prepped_data[drive_model_family].append(prepped_data)
 
-    print(json.dumps(afr_prepped_data, indent=4, sort_keys=True, default=str))
+    #print(json.dumps(afr_prepped_data, indent=4, sort_keys=True, default=str))
 
     return afr_prepped_data
 
 
 def _compute_afr_per_drive_model_family(
-        afr_calc_input_data: dict[str, dict[str, dict[str, int]]]):
+        afr_calc_prepped_data: dict[str, list[dict[str, str | int | float]]]):
 
-    computed_afr_data = {}
+    computed_afr_data: dict[str, list[dict[str, str | int | float]]] = {}
 
-    for curr_model_family_name in afr_calc_input_data:
+    for curr_model_family_name in afr_calc_prepped_data:
         computed_afr_data[ curr_model_family_name ] = []
 
-        for curr_datapoint in afr_calc_input_data[curr_model_family_name]:
+        for curr_datapoint in afr_calc_prepped_data[curr_model_family_name]:
 
             # Scaling factor is 365 unit-days / year
             afr_scaling_factor = 365.0
@@ -163,14 +165,43 @@ def _compute_afr_per_drive_model_family(
 
             computed_afr_data[ curr_model_family_name ].append(
                 {
-                    "day_index"                 : curr_datapoint['day_index'],
-                    "cumulative_drive_failures" : curr_datapoint['cumulative_drive_failures'],
-                    "cumulative_drive_days"     : curr_datapoint['cumulative_drive_days'],
+                    "day_index"     : curr_datapoint['day_index'],
                     "afr_percent"   : round(annualized_failure_rate * 100.0, 2),
-                } )
-
+                    #"cumulative_drive_failures" : curr_datapoint['cumulative_drive_failures'],
+                    #"cumulative_drive_days"     : curr_datapoint['cumulative_drive_days'],
+                }
+            )
 
     return computed_afr_data
+
+
+def _write_afr_data_to_csv(args: argparse.Namespace,
+                           drive_model_family_afr_data: dict[str, list[dict[str, str | int | float]]]) -> None:
+
+    sorted_drive_model_families: list[str] = sorted(drive_model_family_afr_data.keys())
+
+    with open(args.computed_afr_csv, 'w') as file_handle:
+        csv_writer = csv.writer(file_handle)
+
+        # Write header row
+        field_names: tuple[str, ...] = (
+            'drive_model_family',
+            'day_index',
+            'annualized_failure_rate_percent',
+        )
+        csv_writer.writerow(field_names)
+
+        # Deal with data rows
+        for curr_drive_model_family in sorted_drive_model_families:
+            for curr_afr_datapoint in drive_model_family_afr_data[curr_drive_model_family]:
+                #print(json.dumps(curr_afr_datapoint))
+                current_row: tuple[str | int | float, ...] = (
+                        curr_drive_model_family,
+                        curr_afr_datapoint[ 'day_index' ],
+                        f"{curr_afr_datapoint[ 'afr_percent' ]:.02f}",
+                    )
+
+                csv_writer.writerow( current_row)
 
 
 def _main() -> None:
@@ -181,6 +212,10 @@ def _main() -> None:
     #print( json.dumps(parsed_csv_data, indent=4, sort_keys=True) )
 
     afr_prepped_data: dict[str, list[dict[str, int | str]]] = _prep_csv_data_for_afr_calc( parsed_csv_data )
+
+    drive_model_family_afr_data: dict[str, list[dict[str, int | str]]] = \
+        _compute_afr_per_drive_model_family(afr_prepped_data)
+    _write_afr_data_to_csv( args, drive_model_family_afr_data )
 
 
 if __name__ == "__main__":
