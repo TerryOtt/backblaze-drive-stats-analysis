@@ -1,58 +1,58 @@
 {
     "Seagate Exos 7E8": [
-        "ST8000NM000A$",
-        "ST8000NM0055$"
+        "\\bST8000NM000A$",
+        "\\bST8000NM0055$"
     ],
     "Seagate Exos X10": [
-        "ST10000NM0086$"
+        "\\bST10000NM0086$"
     ],
     "Seagate Exos X12": [
-        "ST12000NM0007$",
-        "ST12000NM0117$"
+        "\\bST12000NM0007$",
+        "\\bST12000NM0117$"
     ],
     "Seagate Exos X14": [
-        "ST12000NM0008$",
-        "ST14000NM0018$",
-        "ST14000NM0138$"
+        "\\bST12000NM0008$",
+        "\\bST14000NM0018$",
+        "\\bST14000NM0138$"
     ],
     "Seagate Exos X16": [
-        "ST10000NM001G$",
-        "ST12000NM001G$",
-        "ST12000NM003G$",
-        "ST14000NM001G$",
-        "ST16000NM001G$",
-        "ST16000NM005G$"
+        "\\bST10000NM001G$",
+        "\\bST12000NM001G$",
+        "\\bST12000NM003G$",
+        "\\bST14000NM001G$",
+        "\\bST16000NM001G$",
+        "\\bST16000NM005G$"
     ],
     "Seagate Exos X18": [
-        "ST12000NM000J$",
-        "ST14000NM000J$",
-        "ST14000NM002J$",
-        "ST16000NM000J$",
-        "ST16000NM002J$",
-        "ST18000NM000J$"
+        "\\bST12000NM000J$",
+        "\\bST14000NM000J$",
+        "\\bST14000NM002J$",
+        "\\bST16000NM000J$",
+        "\\bST16000NM002J$",
+        "\\bST18000NM000J$"
     ],
     "Seagate Exos X24": [
-        "ST24000NM002H$"
+        "\\bST24000NM002H$"
     ],
     "WD Ultrastar 7K6000": [
-        "HUS726040ALE610$",
-        "HUS726040ALN610$"
+        "\\bHUS726040ALE610$",
+        "\\bHUS726040ALN610$"
     ],
     "WD Ultrastar He8": [
-        "HUH728080ALE600$",
-        "HUH728080ALE604$"
+        "\\bHUH728080ALE600$",
+        "\\bHUH728080ALE604$"
     ],
     "WD Ultrastar DC HC300": [
-        "HUS728T8TALE6L4$"
+        "\\bHUS728T8TALE6L4$"
     ],
     "WD Ultrastar DC HC500": [
-        "HUH721010ALE600$",
-        "HUH721212ALE600$",
-        "HUH721212ALE604$",
-        "HUH721212ALN604$",
-        "WUH721414ALE6L4$",
-        "WUH721816ALE6L0$",
-        "WUH721816ALE6L4$",
-        "WUH722222ALE6L4$"
+        "\\bHUH721010ALE600$",
+        "\\bHUH721212ALE600$",
+        "\\bHUH721212ALE604$",
+        "\\bHUH721212ALN604$",
+        "\\bWUH721414ALE6L4$",
+        "\\bWUH721816ALE6L0$",
+        "\\bWUH721816ALE6L4$",
+        "\\bWUH722222ALE6L4$"
     ]
 }
