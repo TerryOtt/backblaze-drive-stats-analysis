@@ -4,6 +4,7 @@ import argparse
 import csv
 import datetime
 import json
+import pprint
 import re
 
 
@@ -74,14 +75,14 @@ def _parse_csv_data(args: argparse.Namespace,
                 for current_mapping in drive_model_family_mappings:
                     #print(f"\tTrying match: {current_mapping['regex']}")
                     if re.search(current_mapping['regex'], drive_model):
-                        print(f"{drive_model} -> {current_mapping['drive_model_family']} "
-                              f"(regex: {current_mapping['regex']})")
+                        # print(f"{drive_model} -> {current_mapping['drive_model_family']} "
+                        #       f"(regex: {current_mapping['regex']})")
 
                         current_model_family = current_mapping['drive_model_family']
 
                         if current_model_family not in parsed_data:
                             parsed_data[current_model_family] = {}
-                            print(f"Added {current_model_family} to parsed data")
+                            # print(f"Added {current_model_family} to parsed data")
 
             # If we don't have a drive model family for this drive by the time we get here,
             #       we don't care about the drive model
@@ -100,11 +101,86 @@ def _parse_csv_data(args: argparse.Namespace,
 
     return parsed_data
 
+
+def _prep_csv_data_for_afr_calc(
+        parsed_csv_data: dict[str, dict[str, dict[str, int]]] ) -> dict[str, list[dict[str, int | str]]]:
+    """Take CSV data and move it to a list of dicts, with day index and cumulative stats. """
+
+    print("Prepping data")
+
+    afr_prepped_data: dict[str, list[dict[str, int | str]]] = {}
+
+    for drive_model_family in parsed_csv_data:
+        # Get sorted list of dates
+        sorted_dates = sorted([datetime.date.fromisoformat(datestr)
+                               for datestr in parsed_csv_data[drive_model_family]])
+
+        afr_prepped_data[drive_model_family]: list[dict[str, int | str]] = []
+
+        start_date: datetime.date = sorted_dates[0]
+        cumulative_data: dict[str, int] = {
+            'drive_days'    : 0,
+            'failures'      : 0,
+        }
+
+        for curr_date in sorted_dates:
+            # Initialize prepped data from CSV data and then enrich it
+            prepped_data: dict[str, int | str] = parsed_csv_data[drive_model_family][curr_date.isoformat()]
+
+            cumulative_data['drive_days']   += prepped_data['drive_count']
+            cumulative_data['failures']     += prepped_data['failure_count']
+
+            prepped_data.update(
+                {
+                    'date'                      : curr_date.isoformat(),
+                    'day_index'                 : (curr_date - start_date).days + 1,
+                    'cumulative_drive_days'     : cumulative_data['drive_days'],
+                    'cumulative_drive_failures' : cumulative_data['failures'],
+                }
+            )
+            afr_prepped_data[drive_model_family].append(prepped_data)
+
+    print(json.dumps(afr_prepped_data, indent=4, sort_keys=True, default=str))
+
+    return afr_prepped_data
+
+
+def _compute_afr_per_drive_model_family(
+        afr_calc_input_data: dict[str, dict[str, dict[str, int]]]):
+
+    computed_afr_data = {}
+
+    for curr_model_family_name in afr_calc_input_data:
+        computed_afr_data[ curr_model_family_name ] = []
+
+        for curr_datapoint in afr_calc_input_data[curr_model_family_name]:
+
+            # Scaling factor is 365 unit-days / year
+            afr_scaling_factor = 365.0
+
+            annualized_failure_rate = (curr_datapoint[ 'cumulative_drive_failures' ] /
+                                       curr_datapoint[ 'cumulative_drive_days' ]) * afr_scaling_factor
+
+            computed_afr_data[ curr_model_family_name ].append(
+                {
+                    "day_index"                 : curr_datapoint['day_index'],
+                    "cumulative_drive_failures" : curr_datapoint['cumulative_drive_failures'],
+                    "cumulative_drive_days"     : curr_datapoint['cumulative_drive_days'],
+                    "afr_percent"   : round(annualized_failure_rate * 100.0, 2),
+                } )
+
+
+    return computed_afr_data
+
+
 def _main() -> None:
     args: argparse.Namespace = _parse_args()
     drive_model_family_mappings: list[dict[str, str]] = _generate_regex_map(args)
-    parsed_csv_data:dict[str, dict[str, dict[str, int]]] = _parse_csv_data(args, drive_model_family_mappings)
-    print( json.dumps(parsed_csv_data, indent=4, sort_keys=True) )
+    parsed_csv_data: dict[str, dict[str, dict[str, int]]] = _parse_csv_data(
+        args, drive_model_family_mappings)
+    #print( json.dumps(parsed_csv_data, indent=4, sort_keys=True) )
+
+    afr_prepped_data: dict[str, list[dict[str, int | str]]] = _prep_csv_data_for_afr_calc( parsed_csv_data )
 
 
 if __name__ == "__main__":
