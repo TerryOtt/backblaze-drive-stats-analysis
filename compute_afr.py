@@ -176,7 +176,7 @@ def _compute_afr_per_drive_model_family(
 
 
 def _write_afr_data_to_csv(args: argparse.Namespace,
-                           drive_model_family_afr_data: dict[str, list[dict[str, str | int | float]]]) -> None:
+                           drive_model_family_afr_data: dict[str, list[dict[str, str | int ]]]) -> None:
 
     sorted_drive_model_families: list[str] = sorted(drive_model_family_afr_data.keys())
 
