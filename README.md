@@ -1,10 +1,8 @@
 # backblaze-drive-stats-analysis
 
-## Setup and Stuff
+## Launch Trino and Register Table
 
-* Run commands from backblaze-drive-stats-trino-iceberg 
-  * Need link here
-
+Run commands to launch Trino and register the `drivestats` from the [backblaze-drive-stats-trino-iceberg repo](https://github.com/TerryOtt/backblaze-drive-stats-trino-iceberg/tree/main).
 
 ## Pull Drive Stats
 
