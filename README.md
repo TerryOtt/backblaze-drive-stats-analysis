@@ -3,6 +3,7 @@
 ## Supported CPU Architectures
 
 Ubuntu 24.04 LTS, Trino, and Python all run great on both x86-64 and ARM64 (aka "aarch64") architectures. 
+
 I have a preference for ARM instances when possible, as they are roughly as performant as x86 yet cheaper.
 
 ## Launch Trino and Register Table
