@@ -21,11 +21,16 @@ $ wc -l iceberg_latest.csv
 ### Query Execution Time
 
 The amount of time it takes to query the Iceberg table is 
-_heavily_ correlated to compute resources. There definitely
-is a point of diminishing returns, however.
+_heavily_ correlated to compute resources. 
+
+_Notes_:
+* There is a point of diminishing returns above 4-8 cores/8-16 threads
+* **DO NOT ATTEMPT** on a system with less than 4 GB of RAM; you have been warned!
 
 **Query time by AWS EC2 instance type**:
 
+* **t3.small**: _system goes unresponsive; query never returns_
+* **t3.medium**: 130 seconds
 * **c7i.large**: 108 seconds
 * **c7i.xlarge**: 53 seconds
 * **c7i.2xlarge**: 30 seconds
