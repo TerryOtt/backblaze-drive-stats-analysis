@@ -84,7 +84,7 @@ drive_model,day_index,date,cumulative_drive_days,cumulative_drive_failures,annua
 $
 ```
 
-## Gruesome Non-TL;DR Detail
+## Gruesome Detail
 
 ### Supported CPU Architectures
 
