@@ -59,3 +59,46 @@ sys     0m0.060s
 
 $
 ```
+
+## Network Latency To Backblaze S3 Endpoint
+
+AWS `us-west-1` region is five network hops and one millisecond away from Backblaze's peering point at
+[Equinix SV1](https://www.equinix.com/data-centers/americas-colocation/united-states-colocation/silicon-valley-data-centers/sv1)
+in San Jose, California, USA.
+
+```bash
+$  traceroute s3.us-west-004.backblazeb2.com
+traceroute to s3.us-west-004.backblazeb2.com (149.137.133.254), 30 hops max, 60 byte packets
+ 1  * 150.222.97.127 (150.222.97.127)  1.026 ms 150.222.97.131 (150.222.97.131)  1.013 ms
+ 2  240.0.168.1 (240.0.168.1)  1.202 ms 240.0.168.2 (240.0.168.2)  1.217 ms 240.0.168.0 (240.0.168.0)  1.214 ms
+ 3  242.2.27.69 (242.2.27.69)  1.747 ms 242.2.26.69 (242.2.26.69)  1.722 ms 242.2.27.195 (242.2.27.195)  0.977 ms
+ 4  52.93.70.185 (52.93.70.185)  1.109 ms 52.93.70.187 (52.93.70.187)  1.089 ms 52.93.70.203 (52.93.70.203)  0.969 ms
+ 5  eqix-sv1.backblaze-1.com (206.223.116.147)  1.072 ms  0.994 ms  1.068 ms
+ 6  149.137.143.67 (149.137.143.67)  40.965 ms  40.921 ms  40.938 ms
+ 7  * * *
+
+$ whois 149.137.143.67
+
+NetRange:       149.137.128.0 - 149.137.143.255
+CIDR:           149.137.128.0/20
+NetName:        BACKB-7
+NetHandle:      NET-149-137-128-0-1
+Parent:         NET149 (NET-149-0-0-0-0)
+NetType:        Direct Allocation
+OriginAS:
+Organization:   Backblaze Inc (BACKB-7)
+RegDate:        2020-09-10
+Updated:        2025-03-25
+Ref:            https://rdap.arin.net/registry/ip/149.137.128.0
+
+OrgName:        Backblaze Inc
+OrgId:          BACKB-7
+Address:        201 Baldwin Ave.
+City:           San Mateo
+StateProv:      CA
+PostalCode:     94401
+Country:        US
+RegDate:        2016-02-22
+Updated:        2024-11-25
+Ref:            https://rdap.arin.net/registry/entity/BACKB-7
+```
