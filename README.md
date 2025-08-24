@@ -110,14 +110,14 @@ WDC  WUH721816ALE6L4
 WDC WUH721816ALE6L4
 WUH721816ALE6L4
 
-$ grep "WUH721816ALE6L4" backblaze-drive-stats_YYYY-MM-DD.csv | wc -l
-2108
-
-# Okay, 2,108 rows with daily data for that model, what's the issue?
+# Okay, they weren't consistent on the name of drive models in this data set, but as long as
+#   there isn't more than one row of data for that drive per day, we should be fi--
 
 $ grep "WUH721816ALE6L4" backblaze-drive-stats_YYYY-MM-DD.csv | grep "2024-11-20"    
 WDC WUH721816ALE6L4,2024-11-20,26395,0
 WUH721816ALE6L4,2024-11-20,74,0
+
+# ...Dammit
 
 $
 ```
