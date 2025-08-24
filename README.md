@@ -18,14 +18,15 @@ $ wc -l iceberg_latest.csv
 262961 iceberg_latest.csv
 ```
 
-### Timing Data
+### Query Execution Time
 
-The amount of time it takes to retrieve the data from the Iceberg table is 
-heavily dependent on the amount of compute resources available to Trino.
+The amount of time it takes to query the Iceberg table is 
+_heavily_ dependent on the amount of compute resources available.
 
-_Query time by AWS EC2 instance type_:
+**Query time by AWS EC2 instance type**:
 
 * **c7i.large**: 108 seconds
+* **c7i.xlarge**: 53 seconds
 * **c7i.2xlarge**: 
 * **c7i.4xlarge**:
 * **c7i.8xlarge**:
