@@ -110,22 +110,22 @@ WDC  WUH721816ALE6L4
 WDC WUH721816ALE6L4
 WUH721816ALE6L4
 
-# Okay, they weren't consistent on the name of drive models in this data set, but as long as
-#   there isn't more than one row of data for that drive per day, we should be fi--
+# Okay, they weren't consistent on the name of drive models in this data set, but they've been collecting
+#   it for over a decade; mistakes are going to happen. 
+#
+# As long as there isn't more than one row of data for that drive per day, we should be fi--
 
-$ grep "WUH721816ALE6L4" backblaze-drive-stats_YYYY-MM-DD.csv | grep "2024-11-20"    
+$ grep "WUH721816ALE6L4.*,2024-11-20," backblaze-drive-stats_YYYY-MM-DD.csv
 WDC WUH721816ALE6L4,2024-11-20,26395,0
 WUH721816ALE6L4,2024-11-20,74,0
 
-# ...Dammit
-
-$
+# ...Well. Dammit
 ```
 
 **Ohhh no!**
 
-There are multiple rows for the same drive model and date, but they weren't consistent on the drive model string
-for all drives. 
+There are multiple rows for the same drive model and date, because Backblaze weren't consistent on the 
+drive model string for all drives -- even on the same daily stats collection run!
 
 This means that the multiple rows for that day to be combined into one row. They aren't duplicate rows 
 (thank goodness), but the drive counts and failure counts need to be added together for that day.
