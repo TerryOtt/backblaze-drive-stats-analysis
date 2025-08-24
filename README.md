@@ -84,13 +84,15 @@ drive_model,day_index,date,cumulative_drive_days,cumulative_drive_failures,annua
 $
 ```
 
-## Supported CPU Architectures
+## Gruesome Non-TL;DR Detail
+
+### Supported CPU Architectures
 
 Ubuntu 24.04 LTS, Trino, and Python all run great on both x86-64 and ARM64 (aka "aarch64") architectures. 
 
 I have a preference for ARM instances when possible, as they are roughly as performant as x86 yet cheaper.
 
-## Query Execution Time
+### Query Execution Time
 
 The amount of time it takes to query the Iceberg table is 
 _heavily_ correlated to compute resources. 
@@ -114,7 +116,7 @@ EC2 instances were launched in the **`us-west-1`** (N. California) AWS region, d
 * **c8g.8xlarge**: 11 seconds
 * **c8g.12xlarge**: 10 seconds
 
-## Network Latency To Backblaze S3 Endpoint
+### Network Latency To Backblaze S3 Endpoint
 
 AWS `us-west-1` region is five network hops and one millisecond away from Backblaze's peering point at
 [Equinix SV1](https://www.equinix.com/data-centers/americas-colocation/united-states-colocation/silicon-valley-data-centers/sv1)
