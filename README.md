@@ -109,26 +109,27 @@ $ tail -n +2 backblaze-drive-stats_YYYY-MM-DD.csv | cut -f 1 -d ',' | sort | uni
 WDC  WUH721816ALE6L4
 WDC WUH721816ALE6L4
 WUH721816ALE6L4
+```
 
-# Okay, they weren't consistent on the name of drive models in this data set, but they've been collecting
-#   it for over a decade; mistakes are going to happen. 
-#
-# As long as there isn't more than one row of data for that drive per day, we should be fi--
+Okay, Backblaze weren't consistent on the name of drive models in this data set, but they've been collecting
+it for over a decade without making a dime from this. Mistakes are going to happen, no biggie.
 
+As long as there isn't more than one row of data for that drive per day, we should be fi--
+
+```bash
 $ grep "WUH721816ALE6L4.*,2024-11-20," backblaze-drive-stats_YYYY-MM-DD.csv
 WDC WUH721816ALE6L4,2024-11-20,26395,0
 WUH721816ALE6L4,2024-11-20,74,0
 
-# ...Well. Dammit
+$
 ```
 
-**Ohhh no!**
+**...Well. Dammit.**
 
-There are multiple rows for the same drive model and date, because Backblaze weren't consistent on the 
-drive model string for all drives -- even on the same daily stats collection run!
+There are multiple rows for the same drive model and date -- even within the same daily stats collection run!
 
 This means that the multiple rows for that day to be combined into one row. They aren't duplicate rows 
-(thank goodness), but the drive counts and failure counts need to be added together for that day.
+(thank goodness), but all the rows with various names of the same drive need to be added together for that day.
 
 ### Supported CPU Architectures
 
