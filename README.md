@@ -105,16 +105,21 @@ We should be **enriching** the Backblaze data rows with each day's cumulative AF
 Why did 2,233 rows of daily drive health data disappear?!?!?
 
 ```csv
-$ tail -n +2 backblaze-drive-stats_YYYY-MM-DD.csv | cut -f 1 -d ',' | sort | uniq | grep "WUH721816ALE6L4"
+$ grep "WUH72" backblaze-drive-stats_2025-08-24.csv | cut -d ',' -f 1 | sort | uniq  WDC  WUH721414ALE6L4
+WDC  WUH721816ALE6L0
 WDC  WUH721816ALE6L4
+WDC WUH721414ALE6L4
+WDC WUH721816ALE6L0
 WDC WUH721816ALE6L4
+WDC WUH722222ALE6L4
 WUH721816ALE6L4
 ```
 
-Okay, Backblaze weren't consistent on the name of drive models in this data set, but they've been collecting
-it for over a decade without making a dime from this. Mistakes are going to happen, no biggie.
+Okay, Backblaze weren't consistent on the name of drive models in this data set. That's fine. They've been collecting
+and publishing this data for over a decade without making a dime from all that work. 
 
-As long as there isn't more than one row of data for that drive per day, we should be fi--
+Mistakes are going to happen, no biggie. As long as there isn't more than one row of data for that drive per day, 
+we should be fi--
 
 ```bash
 $ grep "WUH721816ALE6L4.*,2024-11-20," backblaze-drive-stats_YYYY-MM-DD.csv
@@ -128,8 +133,9 @@ $
 
 There are multiple rows for the same drive model and date -- even within the same daily stats collection run!
 
-This means that the multiple rows for that day to be combined into one row. They aren't duplicate rows 
-(thank goodness), but all the rows with various names of the same drive need to be added together for that day.
+This means that there are 2,233 days worth of data that are on multiple rows that shouldn't be. 
+They aren't duplicate rows (thank goodness), but all the rows with various names of the same drive need to be 
+added together for that day.
 
 ### Supported CPU Architectures
 
