@@ -1,30 +1,96 @@
 # backblaze-drive-stats-analysis
 
+## TL;DR -- Gimme The Data
+
+Instructions for Ubuntu 24.04.
+
+### Install Docker 
+
+```bash
+$ sudo apt-get update
+$ sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+$ sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+$ echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+$ sudo apt-get update
+$ sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+$ sudo systemctl enable docker
+$ sudo usermod -aG docker $USER
+$ newgrp docker
+```
+
+### Start Trino and Hive Metastore Containers
+
+```bash
+$ mkdir ~/git
+$ cd ~/git
+$ git clone https://github.com/TerryOtt/backblaze-drive-stats-trino-iceberg.git
+$ cd backblaze-drive-stats-trino-iceberg
+$ docker compose up --detach
+
+# Wait 30-40 seconds for containers to download and fully start
+```
+
+### Get Drive Data For AFR Calculations From Backblaze Iceberg Table
+
+```bash
+$ time ./register-drive-stats-table.sh
+CREATE SCHEMA
+USE
+CALL
+
+real    1m8.049s
+user    0m0.134s
+sys     0m0.057s
+
+$ cd ..
+$ git clone https://github.com/TerryOtt/backblaze-drive-stats-analysis.git
+$ cd backblaze-drive-stats-analysis
+$ time ./retrieve_backblaze_drive_data.sh > backblaze-drive-stats_`date +%F`.csv
+
+real    1m11.701s
+user    0m0.116s
+sys     0m0.358s
+
+$ du -h backblaze-drive-stats_`date +%F`.csv
+8.7M    backblaze-drive-stats_YYYY-MM-DD.csv
+
+$ wc -l backblaze-drive-stats_`date +%F`.csv
+262961 backblaze-drive-stats_YYYY-MM-DD.csv
+```
+
+### Generate CSV File With Annualized Failure Rate (AFR) Data
+
+```bash
+$ time python3 compute_afr.py backblaze-drive-stats_`date +%F`.csv backblaze-drive-models-afr_`date +%F`.csv
+
+real    0m1.451s
+user    0m1.357s
+sys     0m0.082s
+
+$ du -h backblaze-drive-models-afr_`date +%F`.csv
+12M     backblaze-drive-models-afr_YYYY-MM-DD.csv
+
+$ wc -l backblaze-drive-models-afr_`date +%F`.csv
+260728 backblaze-drive-stats_YYYY-MM-DD.csv
+
+$ head -5 backblaze-drive-models-afr_`date +%F`.csv
+
+drive_model,day_index,date,cumulative_drive_days,cumulative_drive_failures,annualized_failure_rate_percent
+00MD00,1,2017-04-12,2,0,0.00
+00MD00,2,2017-04-13,4,0,0.00
+00MD00,3,2017-04-14,6,0,0.00
+00MD00,4,2017-04-15,8,0,0.00
+
+$
+```
+
 ## Supported CPU Architectures
 
 Ubuntu 24.04 LTS, Trino, and Python all run great on both x86-64 and ARM64 (aka "aarch64") architectures. 
 
 I have a preference for ARM instances when possible, as they are roughly as performant as x86 yet cheaper.
 
-## Launch Trino and Register Table
-
-Run commands to launch Trino and register the `drivestats` Iceberg table 
-using instructions from the 
-[backblaze-drive-stats-trino-iceberg](https://github.com/TerryOtt/backblaze-drive-stats-trino-iceberg/tree/main) repo.
-
-## Retrieve Drive Stats From Iceberg Table
-
-```bash
-$ ./retrieve_backblaze_drive_data.sh > iceberg_latest.csv
-
-$ ls -l iceberg_latest.csv
--rw-rw-r-- 1 tdo tdo 9062939 Aug 23 20:05 iceberg_latest.csv
-
-$ wc -l iceberg_latest.csv
-262961 iceberg_latest.csv
-```
-
-### Query Execution Time
+## Query Execution Time
 
 The amount of time it takes to query the Iceberg table is 
 _heavily_ correlated to compute resources. 
@@ -47,18 +113,6 @@ EC2 instances were launched in the **`us-west-1`** (N. California) AWS region, d
 * **c8g.4xlarge**: 17 seconds
 * **c8g.8xlarge**: 11 seconds
 * **c8g.12xlarge**: 10 seconds
-
-## Calculate Per-Drive-Model AFR Stats 
-
-```bash
-$ python3 compute_afr.py iceberg_latest.csv backblaze-drive-stats-afr-by-model.csv
-
-real    0m1.423s
-user    0m1.362s
-sys     0m0.060s
-
-$
-```
 
 ## Network Latency To Backblaze S3 Endpoint
 
