@@ -71,7 +71,7 @@ $ du -h backblaze-drive-models-afr_`date +%F`.csv
 12M     backblaze-drive-models-afr_YYYY-MM-DD.csv
 
 $ wc -l backblaze-drive-models-afr_`date +%F`.csv
-260728 backblaze-drive-stats_YYYY-MM-DD.csv
+260728 backblaze-drive-models-afr_YYYY-MM-DD.csv
 
 $ head -5 backblaze-drive-models-afr_`date +%F`.csv
 
@@ -85,6 +85,50 @@ $
 ```
 
 ## Gruesome Detail
+
+### Differing CSV Line Counts
+
+Eagle-eyed users likely noticed something strange in the line count data above:
+
+```bash
+$ wc -l backblaze-drive-stats_`date +%F`.csv
+262961 backblaze-drive-stats_YYYY-MM-DD.csv
+
+$ wc -l backblaze-drive-models-afr_`date +%F`.csv
+260728 backblaze-drive-models-afr_YYYY-MM-DD.csv
+```
+
+I'm sorry wut?
+
+We should be **enriching** the Backblaze data rows with each day's cumulative AFR, not redacting any. 
+
+Why did 2,233 rows of daily drive health data disappear?!?!?
+
+```csv
+$ tail -n +2 backblaze-drive-stats_YYYY-MM-DD.csv | cut -f 1 -d ',' | sort | uniq | grep "WUH721816ALE6L4"
+WDC  WUH721816ALE6L4
+WDC WUH721816ALE6L4
+WUH721816ALE6L4
+
+$ grep "WUH721816ALE6L4" backblaze-drive-stats_YYYY-MM-DD.csv | wc -l
+2108
+
+# Okay, 2,108 rows with daily data for that model, what's the issue?
+
+$ grep "WUH721816ALE6L4" backblaze-drive-stats_YYYY-MM-DD.csv | grep "2024-11-20"    
+WDC WUH721816ALE6L4,2024-11-20,26395,0
+WUH721816ALE6L4,2024-11-20,74,0
+
+$
+```
+
+**Ohhh no!**
+
+There are multiple rows for the same drive model and date, but they weren't consistent on the drive model string
+for all drives. 
+
+This means that the multiple rows for that day to be combined into one row. They aren't duplicate rows 
+(thank goodness), but the drive counts and failure counts need to be added together for that day.
 
 ### Supported CPU Architectures
 
