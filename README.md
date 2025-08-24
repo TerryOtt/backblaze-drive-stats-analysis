@@ -6,7 +6,7 @@ Run commands to launch Trino and register the `drivestats` Iceberg table
 using instructions from the 
 [backblaze-drive-stats-trino-iceberg](https://github.com/TerryOtt/backblaze-drive-stats-trino-iceberg/tree/main) repo.
 
-## Pull Drive Stats
+## Retrieve Drive Stats From Iceberg Table
 
 ```bash
 $ ./retrieve_backblaze_drive_data.sh > iceberg_latest.csv
@@ -21,16 +21,19 @@ $ wc -l iceberg_latest.csv
 ### Query Execution Time
 
 The amount of time it takes to query the Iceberg table is 
-_heavily_ dependent on the amount of compute resources available.
+_heavily_ correlated to compute resources. There definitely
+is a point of diminishing returns, however.
 
 **Query time by AWS EC2 instance type**:
 
 * **c7i.large**: 108 seconds
 * **c7i.xlarge**: 53 seconds
-* **c7i.2xlarge**: 
-* **c7i.4xlarge**:
-* **c7i.8xlarge**:
-* **c7i.12xlarge**:
+* **c7i.2xlarge**: 30 seconds
+* **c7i.4xlarge**: 19 seconds
+* **c7i.8xlarge**: 15 seconds
+* **c7i.12xlarge**: 13 seconds
+* **c7i.16xlarge**: 11 seconds
+* **c7i.24xlarge**: 11 seconds
 
 ## Calculate Per-Drive-Model AFR Stats 
 
