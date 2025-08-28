@@ -29,9 +29,8 @@ def _convert_afr_csv_to_excel(args: argparse.Namespace) -> dict[int, dict[str, f
 
 
 def _write_excel_data_to_csv(excel_data: dict[int, dict[str, float]], args: argparse.Namespace) -> None:
-    for day_index_str in sorted(excel_data):
-        day_index_int: int = int(day_index_str)
-        print(f"Day index: {day_index_int}")
+    for day_index in sorted(excel_data):
+        print(f"Day index: {day_index}")
 
 def _main():
     args: argparse.Namespace = _parse_args()
