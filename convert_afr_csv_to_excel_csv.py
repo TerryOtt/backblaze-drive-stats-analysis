@@ -73,14 +73,14 @@ def _create_excel_csv(
 
         for day_index in sorted(excel_data):
 
-            data_row: dict[str, int | float] = {
+            data_row: dict[str, int | str] = {
                 'day_index': day_index,
             }
 
             for curr_drive_model in drive_model_column_names:
                 # Does Excel data have AFR data for this drive on the given day?
                 if curr_drive_model in excel_data[day_index]:
-                    data_row[curr_drive_model] = excel_data[day_index][curr_drive_model]
+                    data_row[curr_drive_model] = f"{excel_data[day_index][curr_drive_model]:.02f}"
 
                 # If this is just a missing datapoint, copy most recent AFR datapoint  through to avoid
                 #       series line to zero
@@ -91,7 +91,7 @@ def _create_excel_csv(
                     search_day_index:int = day_index - 1
                     while True:
                         if curr_drive_model in excel_data[search_day_index]:
-                            data_row[curr_drive_model] = excel_data[search_day_index][curr_drive_model]
+                            data_row[curr_drive_model] = f"{excel_data[search_day_index][curr_drive_model]:.02f}"
                             break
                         search_day_index -= 1
                         assert search_day_index >= 1
