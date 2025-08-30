@@ -98,9 +98,6 @@ def _create_excel_csv(
 
             csv_writer.writerow(data_row)
 
-            # Write one data row and bail
-            break
-
 
 def _main():
 
