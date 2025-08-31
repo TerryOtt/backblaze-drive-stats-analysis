@@ -2,6 +2,7 @@ import argparse
 import csv
 import datetime
 import json
+import math
 import re
 
 
@@ -79,13 +80,19 @@ def _clean_drive_model_str(drive_model_str: str) -> str:
 def _generate_human_readable_data(
         args: argparse.Namespace,
         trino_data: dict[str, dict[str, dict[str, int]]]
-) -> dict:
+) -> dict[str, list[dict[str, int]]]:
+    human_readable_data: dict[str, list[dict[str, int]]] = {}
+
     with open(args.drive_model_regex_json, "r") as regex_json_handle:
         json_regexes: list[str] = json.load(regex_json_handle)
 
     min_max_deployed_drives: int = 1000
 
+    days_in_data_aggregation_increment: int = 91
+    agg_increments_per_year: int = 4
+
     for curr_drive_model in trino_data:
+        curr_aggregation_increment: int = 1
         drive_model_we_care_about: bool = False
         for curr_drive_model_regex in json_regexes:
             if re.search(curr_drive_model_regex, curr_drive_model):
@@ -100,6 +107,45 @@ def _generate_human_readable_data(
             continue
 
         print(f"Drive model of interest: {curr_drive_model:15s} ({max_drives_deployed:7,} drives)")
+
+        # Walk a quarter at a time, unless we don't have that many dates left
+        agg_year: int = 0
+        while trino_data[curr_drive_model]:
+            sorted_drive_model_dates: list[str] = sorted( trino_data[curr_drive_model])
+            days_to_walk: int = min(days_in_data_aggregation_increment, len(sorted_drive_model_dates))
+
+            start_date: str = sorted_drive_model_dates[0]
+            end_date: str = sorted_drive_model_dates[days_to_walk - 1]
+
+            agg_quarter: int = curr_aggregation_increment % agg_increments_per_year
+
+            if agg_quarter == 0:
+                agg_quarter = 4
+            elif agg_quarter == 1:
+                agg_year += 1
+
+            print(f"\tYear {agg_year}, Quarter {agg_quarter} ({days_to_walk:2d} days, {start_date} - {end_date})")
+
+            for curr_date in sorted_drive_model_dates[:days_to_walk]:
+                #print(f"\t\tCurr date: {curr_date}")
+
+                # Get copy of data at this date
+                today_data: dict[str, int] = trino_data[curr_drive_model][curr_date]
+
+                #print(json.dumps(today_data, indent=2, sort_keys=True))
+
+                # Delete this dates's data from parent data
+                del trino_data[curr_drive_model][curr_date]
+
+            curr_aggregation_increment += 1
+
+
+
+        # Walk data a quarter at a time
+
+        max_afr_in_quarter: float = 0.0
+
+    return human_readable_data
 
 
 def _get_max_drives_deployed(curr_drive_model: str, trino_data_drive: dict[str, dict[str, int]]) -> int:
