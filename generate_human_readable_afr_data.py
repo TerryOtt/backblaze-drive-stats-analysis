@@ -205,6 +205,8 @@ def _generate_output_csv(
         "Quarter",
     ]
 
+    max_quarters: int = 0
+    csv_columns_per_drive_model: dict[str, str] = {}
     for curr_drive_model in sorted(human_readable_data):
         max_drives_deployed: int = 0
 
@@ -214,10 +216,41 @@ def _generate_output_csv(
         model_and_drive_count: str = f"{curr_drive_model} ({max_drives_deployed:,})"
 
         column_names.append(model_and_drive_count)
+        csv_columns_per_drive_model[curr_drive_model] = model_and_drive_count
+        max_quarters = max(max_quarters, len(human_readable_data[curr_drive_model]))
 
-    print(json.dumps(column_names, indent=2))
+    with open(args.human_readable_csv, "w") as output_csv:
+        csv_writer = csv.DictWriter(output_csv, fieldnames=column_names)
 
+        csv_writer.writeheader()
 
+        print(json.dumps(column_names, indent=2))
+        print(f"Max quarters of data for any drive model: {max_quarters}")
+
+        agg_increments_per_year: int = 4
+        display_year: int = 0
+        for curr_quarter in range(max_quarters):
+            display_quarter: int = (curr_quarter + 1) % agg_increments_per_year
+
+            if display_quarter == 0:
+                display_quarter = 4
+            elif display_quarter == 1:
+                display_year += 1
+
+            #print(f"Creating CSV row for year {display_year}, quarter {display_quarter}")
+            data_row: dict[str, int | float | str] = {
+                'Year':  display_year,
+                'Quarter': display_quarter,
+            }
+
+            for curr_drive_model in human_readable_data:
+                # Is there still data for this drive?
+                if human_readable_data[curr_drive_model]:
+                    curr_quarter_data = human_readable_data[curr_drive_model].pop(0)
+                    data_row[csv_columns_per_drive_model[curr_drive_model]] = curr_quarter_data['max_afr_percent']
+
+            #print(json.dumps(data_row, indent=4, sort_keys=True))
+            csv_writer.writerow(data_row)
 
 
 def _main():
