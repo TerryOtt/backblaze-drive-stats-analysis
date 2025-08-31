@@ -2,7 +2,6 @@ import argparse
 import csv
 import datetime
 import json
-import math
 import re
 
 
@@ -80,8 +79,8 @@ def _clean_drive_model_str(drive_model_str: str) -> str:
 def _generate_human_readable_data(
         args: argparse.Namespace,
         trino_data: dict[str, dict[str, dict[str, int]]]
-) -> dict[str, list[dict[str, int]]]:
-    human_readable_data: dict[str, list[dict[str, int]]] = {}
+) -> dict[str, list[dict[str, int | float]]]:
+    human_readable_data: dict[str, list[dict[str, int | float | str]]] = {}
 
     with open(args.drive_model_regex_json, "r") as regex_json_handle:
         json_regexes: list[str] = json.load(regex_json_handle)
@@ -91,7 +90,7 @@ def _generate_human_readable_data(
     days_in_data_aggregation_increment: int = 91
     agg_increments_per_year: int = 4
 
-    for curr_drive_model in trino_data:
+    for curr_drive_model in sorted(trino_data):
         curr_aggregation_increment: int = 1
         drive_model_we_care_about: bool = False
         for curr_drive_model_regex in json_regexes:
@@ -102,16 +101,23 @@ def _generate_human_readable_data(
         if not drive_model_we_care_about:
             continue
 
-        max_drives_deployed: int = _get_max_drives_deployed( curr_drive_model, trino_data[curr_drive_model] )
-        if max_drives_deployed < min_max_deployed_drives:
+        # Make sure it has enough deployed drives
+        deployed_drive_count: int = _get_max_deployed_drive_count(trino_data[curr_drive_model])
+        if deployed_drive_count < min_max_deployed_drives:
             continue
 
-        print(f"Drive model of interest: {curr_drive_model:15s} ({max_drives_deployed:7,} drives)")
+        # print(f"\nDrive model: {curr_drive_model:15s} ({max_drives_deployed:7,} max simultaneous drives deployed)")
+
+        human_readable_data[curr_drive_model]: list[dict[str, int | float | str]] = []
+
+        cumulative_drive_days: int = 0
+        cumulative_failure_count: int = 0
 
         # Walk a quarter at a time, unless we don't have that many dates left
         agg_year: int = 0
+        day_index: int = 1
         while trino_data[curr_drive_model]:
-            sorted_drive_model_dates: list[str] = sorted( trino_data[curr_drive_model])
+            sorted_drive_model_dates: list[str] = sorted(trino_data[curr_drive_model])
             days_to_walk: int = min(days_in_data_aggregation_increment, len(sorted_drive_model_dates))
 
             start_date: str = sorted_drive_model_dates[0]
@@ -124,49 +130,106 @@ def _generate_human_readable_data(
             elif agg_quarter == 1:
                 agg_year += 1
 
-            print(f"\tYear {agg_year}, Quarter {agg_quarter} ({days_to_walk:2d} days, {start_date} - {end_date})")
+            # print(f"\tYear {agg_year}, Quarter {agg_quarter} ({days_to_walk:2d} days, {start_date} - {end_date})")
 
+            # Find max AFR and max deployed drives at any point in the quarter
+            max_afr_in_increment: float = 0.0
+            max_drives_deployed_in_increment: int = 0
             for curr_date in sorted_drive_model_dates[:days_to_walk]:
                 #print(f"\t\tCurr date: {curr_date}")
 
                 # Get copy of data at this date
                 today_data: dict[str, int] = trino_data[curr_drive_model][curr_date]
 
+                cumulative_drive_days += today_data['drive_count']
+                if today_data['drive_count'] > max_drives_deployed_in_increment:
+                    max_drives_deployed_in_increment = today_data['drive_count']
+
+                cumulative_failure_count += today_data['failure_count']
+
+                daily_afr: float = _compute_cumulative_afr(cumulative_drive_days, cumulative_failure_count)
+
+                if daily_afr > max_afr_in_increment:
+                    max_afr_in_increment = daily_afr
+
                 #print(json.dumps(today_data, indent=2, sort_keys=True))
 
                 # Delete this dates's data from parent data
                 del trino_data[curr_drive_model][curr_date]
+                day_index += 1
+
+            # print(f"\t\t   AFR:   {max_afr_in_increment * 100.0:5.03f}%")
+            # print(f"\t\tDrives: {max_drives_deployed_in_increment:7,}")
+
+            # Put this quarter's data in our list
+            human_readable_data[curr_drive_model].append(
+                {
+                    "year"                  : agg_year,
+                    "quarter"               : agg_quarter,
+                    "max_drives_deployed"   : max_drives_deployed_in_increment,
+                    "max_afr_percent"       : round(max_afr_in_increment * 100.0, 3),
+                    "days_in_quarter"       : days_to_walk,
+                    "date_start"            : start_date,
+                    "date_end"              : end_date,
+                }
+            )
 
             curr_aggregation_increment += 1
-
-
-
-        # Walk data a quarter at a time
-
-        max_afr_in_quarter: float = 0.0
 
     return human_readable_data
 
 
-def _get_max_drives_deployed(curr_drive_model: str, trino_data_drive: dict[str, dict[str, int]]) -> int:
-    max_drives_deployed: int = 0
+def _get_max_deployed_drive_count(trino_drive_data: dict[str, dict[str, int]]) -> int:
+    max_deployed_drive_count: int = 0
 
-    # Walk all dates
-    for curr_date in trino_data_drive:
-        drives_deployed: int = trino_data_drive[curr_date]['drive_count']
-        if drives_deployed > max_drives_deployed:
-            max_drives_deployed = drives_deployed
+    for curr_date in trino_drive_data:
+        max_deployed_drive_count = max(max_deployed_drive_count, trino_drive_data[curr_date]['drive_count'] )
 
-    return max_drives_deployed
+    return max_deployed_drive_count
+
+
+def _compute_cumulative_afr(cumulative_drive_days: int, cumulative_failure_count: int) -> float:
+    # Scaling factor is 365 unit-days / year
+    afr_scaling_factor: float  = 365.0
+
+    annualized_failure_rate: float = (cumulative_failure_count / cumulative_drive_days)  * afr_scaling_factor
+
+    return annualized_failure_rate
+
+def _generate_output_csv(
+        args: argparse.Namespace,
+        human_readable_data: dict[str, list[dict[str, int | float | str]]] ) -> None:
+
+    column_names: list[str] = [
+        "Year",
+        "Quarter",
+    ]
+
+    for curr_drive_model in sorted(human_readable_data):
+        max_drives_deployed: int = 0
+
+        for data_increment in human_readable_data[curr_drive_model]:
+            max_drives_deployed = max(max_drives_deployed, data_increment['max_drives_deployed'] )
+
+        model_and_drive_count: str = f"{curr_drive_model} ({max_drives_deployed:,})"
+
+        column_names.append(model_and_drive_count)
+
+    print(json.dumps(column_names, indent=2))
+
+
 
 
 def _main():
     args: argparse.Namespace = _parse_args()
 
     trino_data: dict[str, dict[str, dict[str, int]]] = _read_trino_csv(args)
-    _generate_human_readable_data(args, trino_data)
+    human_readable_data: dict[str, list[dict[str, int | float | str]]] = \
+        _generate_human_readable_data(args, trino_data)
 
-    #print(json.dumps(trino_data, indent=4, sort_keys=True))
+    #print(json.dumps(human_readable_data, indent=4, sort_keys=True))
+
+    _generate_output_csv(args, human_readable_data)
 
 
 if __name__ == "__main__":
