@@ -8,6 +8,7 @@ import re
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Convert AFR CSV to human-readable CSV")
     parser.add_argument("trino_csv", help="Path to CSV with raw data from Trino")
+    parser.add_argument("drive_model_regex_json", help="Path to JSON file with drive model regexes")
     parser.add_argument("human_readable_csv", help="Path to human-readable CSV")
 
     return parser.parse_args()
@@ -75,12 +76,52 @@ def _clean_drive_model_str(drive_model_str: str) -> str:
     return clean_str
 
 
+def _generate_human_readable_data(
+        args: argparse.Namespace,
+        trino_data: dict[str, dict[str, dict[str, int]]]
+) -> dict:
+    with open(args.drive_model_regex_json, "r") as regex_json_handle:
+        json_regexes: list[str] = json.load(regex_json_handle)
+
+    min_max_deployed_drives: int = 1000
+
+    for curr_drive_model in trino_data:
+        drive_model_we_care_about: bool = False
+        for curr_drive_model_regex in json_regexes:
+            if re.search(curr_drive_model_regex, curr_drive_model):
+                drive_model_we_care_about = True
+                break
+
+        if not drive_model_we_care_about:
+            continue
+
+        max_drives_deployed: int = _get_max_drives_deployed( curr_drive_model, trino_data[curr_drive_model] )
+        if max_drives_deployed < min_max_deployed_drives:
+            continue
+
+        print(f"Drive model of interest: {curr_drive_model} ({max_drives_deployed:,} drives)")
+
+
+
+def _get_max_drives_deployed(curr_drive_model: str, trino_data_drive: dict[str, dict[str, int]]) -> int:
+    max_drives_deployed: int = 0
+
+    # Walk all dates
+    for curr_date in trino_data_drive:
+        drives_deployed: int = trino_data_drive[curr_date]['drive_count']
+        if drives_deployed > max_drives_deployed:
+            max_drives_deployed = drives_deployed
+
+    return max_drives_deployed
+
+
 def _main():
     args: argparse.Namespace = _parse_args()
 
-    trino_data: dict[str, dict[datetime.date, dict[str, int]]] = _read_trino_csv(args)
+    trino_data: dict[str, dict[str, dict[str, int]]] = _read_trino_csv(args)
+    _generate_human_readable_data(args, trino_data)
 
-    print(json.dumps(trino_data, indent=4, sort_keys=True))
+    #print(json.dumps(trino_data, indent=4, sort_keys=True))
 
 
 if __name__ == "__main__":
