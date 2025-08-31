@@ -99,8 +99,7 @@ def _generate_human_readable_data(
         if max_drives_deployed < min_max_deployed_drives:
             continue
 
-        print(f"Drive model of interest: {curr_drive_model} ({max_drives_deployed:,} drives)")
-
+        print(f"Drive model of interest: {curr_drive_model:15s} ({max_drives_deployed:7,} drives)")
 
 
 def _get_max_drives_deployed(curr_drive_model: str, trino_data_drive: dict[str, dict[str, int]]) -> int:
