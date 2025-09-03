@@ -54,19 +54,26 @@ def _get_daily_drive_distribution(args: argparse.Namespace, drives_of_interest_r
     daily_drive_distribution: dict[str, dict[str, int]] = {}
     with open(args.trino_csv, 'r') as trino_handle:
         csv_reader: csv.DictReader = csv.DictReader(trino_handle)
-
         
         for curr_csv_row in csv_reader:
             cleaned_drive_model: str = _clean_drive_model_str(curr_csv_row['model'])
+            drive_of_interest: bool = False
             for curr_pattern in drives_of_interest_regex:
                 if re.match(curr_pattern, cleaned_drive_model):
-                    if curr_csv_row['date'] not in daily_drive_distribution:
-                        daily_drive_distribution[curr_csv_row['date']] = {}
+                    drive_of_interest = True
+                    break
 
-                    if cleaned_drive_model not in daily_drive_distribution[curr_csv_row['date']]:
-                         daily_drive_distribution[curr_csv_row['date']][cleaned_drive_model] = 0
+            if not drive_of_interest:
+                print(f"Ignoring model {cleaned_drive_model}, matched no patterns")
+                continue
 
-                    daily_drive_distribution[curr_csv_row['date']][cleaned_drive_model] += int(curr_csv_row['model_count'])
+            if curr_csv_row['date'] not in daily_drive_distribution:
+                daily_drive_distribution[curr_csv_row['date']] = {}
+
+            if cleaned_drive_model not in daily_drive_distribution[curr_csv_row['date']]:
+                daily_drive_distribution[curr_csv_row['date']][cleaned_drive_model] = 0
+
+            daily_drive_distribution[curr_csv_row['date']][cleaned_drive_model] += int(curr_csv_row['model_count'])
 
     return daily_drive_distribution
 
