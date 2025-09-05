@@ -73,7 +73,8 @@ def _get_daily_drive_distribution(args: argparse.Namespace, drives_of_interest_r
             if cleaned_drive_model not in daily_drive_distribution[curr_csv_row['date']]:
                 daily_drive_distribution[curr_csv_row['date']][cleaned_drive_model] = 0
 
-            daily_drive_distribution[curr_csv_row['date']][cleaned_drive_model] += int(curr_csv_row['model_count'])
+            daily_drive_distribution[curr_csv_row['date']][cleaned_drive_model] += int(
+                curr_csv_row['model_count'])
 
     return daily_drive_distribution
 
@@ -112,7 +113,8 @@ def _aggregate_data(daily_data: dict[str, dict[str, int]]):
                 if drive_model not in quarterly_stats['drives']:
                     quarterly_stats['drives'][drive_model] = 0
             
-                quarterly_stats['drives'][drive_model] = max(quarterly_stats['drives'][drive_model], data_to_aggregate[drive_model])
+                quarterly_stats['drives'][drive_model] = max(
+                    quarterly_stats['drives'][drive_model], data_to_aggregate[drive_model])
 
         full_quarterly_stats.append(quarterly_stats)
 
@@ -125,7 +127,8 @@ def _main() -> None:
     args = _parse_args()
     drives_of_interest_regex = _read_drives_of_interest_regexes(args)
     #print(json.dumps(drives_of_interest_regex, indent=4))
-    daily_drive_distribution: dict[str, dict[str, int]] = _get_daily_drive_distribution(args, drives_of_interest_regex)
+    daily_drive_distribution: dict[str, dict[str, int]] = _get_daily_drive_distribution(
+        args, drives_of_interest_regex)
     #print(json.dumps(daily_drive_distribution, indent=4, sort_keys=True))
     aggregated_data: list[dict[str, str | int]] = _aggregate_data(daily_drive_distribution)
     print(json.dumps(aggregated_data, indent=4, sort_keys=True)) 
@@ -133,4 +136,3 @@ def _main() -> None:
 
 if __name__ == "__main__":
     _main()
-
