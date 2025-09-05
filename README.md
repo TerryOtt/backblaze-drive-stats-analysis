@@ -139,7 +139,7 @@ added together for that day.
 
 ### Supported CPU Architectures
 
-Ubuntu 24.04 LTS, Trino, and Python all run great on both x86-64 and ARM64 (aka "aarch64") architectures. 
+Ubuntu 24.04 LTS, Trino, Nessie, and Python all run great on both x86-64 and ARM64 (aka "aarch64") architectures. 
 
 I have a preference for ARM instances when possible, as they are roughly as performant as x86 yet cheaper.
 
@@ -159,13 +159,13 @@ _Notes_:
 EC2 instances were launched in the **`us-west-1`** (N. California) AWS region, due to its geographic proximity to the S3 endpoint.
 
 * **t4g.small**: _system goes unresponsive; query never returns_
-* **t4g.medium**: 106 seconds
-* **c8g.large**: 84 seconds
-* **c8g.xlarge**: 46 seconds
-* **c8g.2xlarge**: 24 seconds
-* **c8g.4xlarge**: 17 seconds
-* **c8g.8xlarge**: 11 seconds
-* **c8g.12xlarge**: 10 seconds
+* **t4g.medium**: 98 seconds
+* **c8g.large**: 70 seconds
+* **c8g.xlarge**: 40 seconds
+* **c8g.2xlarge**: 20 seconds
+* **c8g.4xlarge**: 13 seconds
+* **c8g.8xlarge**: 9 seconds
+* **c8g.12xlarge**: 8 seconds
 
 ### Network Latency To Backblaze S3 Endpoint
 
