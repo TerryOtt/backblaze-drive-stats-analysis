@@ -18,7 +18,7 @@ $ sudo usermod -aG docker $USER
 $ newgrp docker
 ```
 
-### Start Trino and Hive Metastore Containers
+### Start Trino and Nessie Catalog Containers
 
 ```bash
 $ mkdir ~/git
