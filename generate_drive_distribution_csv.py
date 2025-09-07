@@ -7,6 +7,9 @@ import re
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Convert Trino CSV to quarterly drive distribution CSV")
+    min_drives_default: int = 1000
+    parser.add_argument("--min-drives", type=int, default=min_drives_default,
+                        help=f"Minimum number of drives for model to be included (default: {min_drives_default})")
     parser.add_argument("trino_csv", help="Path to CSV with raw data from Trino")
     parser.add_argument("drive_model_regex_json", help="Path to JSON file with drive model regexes")
     parser.add_argument("drive_distribution_csv", help="Path to output CSV")
@@ -64,7 +67,7 @@ def _get_daily_drive_distribution(args: argparse.Namespace, drives_of_interest_r
                     break
 
             if not drive_of_interest:
-                print(f"Ignoring model {cleaned_drive_model}, matched no patterns")
+                #print(f"Ignoring model {cleaned_drive_model}, matched no patterns")
                 continue
 
             if curr_csv_row['date'] not in daily_drive_distribution:
@@ -79,31 +82,37 @@ def _get_daily_drive_distribution(args: argparse.Namespace, drives_of_interest_r
     return daily_drive_distribution
 
 
-def _aggregate_data(daily_data: dict[str, dict[str, int]]):
+def _aggregate_data(daily_data: dict[str, dict[str, int]]) -> list[dict[str, str|dict[str, int]]]:
     # Find starting date in data
     sorted_dates: list[str] = sorted(daily_data)
     first_day_str = sorted_dates[0]
     last_day_str = sorted_dates[-1]
     starting_date:datetime.date = datetime.date.fromisoformat(first_day_str)
     last_day_of_data: datetime.date = datetime.date.fromisoformat(last_day_str)
-    full_quarterly_stats = []
+    full_quarterly_stats: list[dict[str, str|dict[str, int]]] = []
     while starting_date < last_day_of_data:
+        quarter_str: str = ""
         if starting_date.month <= 3:
             ending_date = datetime.date.fromisoformat( f"{starting_date.year}-03-31")
+            quarter_str = "1"
         elif starting_date.month <= 6:
             ending_date = datetime.date.fromisoformat( f"{starting_date.year}-06-30")
+            quarter_str = "2"
         elif starting_date.month <= 9:
             ending_date = datetime.date.fromisoformat( f"{starting_date.year}-09-30")
+            quarter_str = "3"
         else:
             ending_date = datetime.date.fromisoformat( f"{starting_date.year}-12-31")
+            quarter_str = "4"
         
-        print(f"\nAggregation date range: {starting_date.isoformat()} - {ending_date.isoformat()}")
-        curr_date: str = starting_date.isoformat()
+        #print(f"\nAggregation date range: {starting_date.isoformat()} - {ending_date.isoformat()}")
 
         quarterly_stats = {
-            "date_range": (starting_date.isoformat(), ending_date.isoformat()),
+            "calendar_quarter": f"{starting_date.year} Q{quarter_str}",
             "drives": {},
         }
+
+        curr_date: str = starting_date.isoformat()
         while curr_date != ending_date.isoformat():
             curr_date = sorted_dates.pop(0)
 
@@ -123,15 +132,74 @@ def _aggregate_data(daily_data: dict[str, dict[str, int]]):
     return full_quarterly_stats
 
 
+def _apply_min_drive_filter(args: argparse.Namespace,
+                            aggregated_data: list[dict[str, str|dict[str, int]]]
+) -> list[dict[str, str|dict[str, int]]]:
+
+    # Find max drives within all quarters for all drives
+    max_drives_by_drive: dict[str, int] = {}
+    for curr_quarter in aggregated_data:
+        for curr_drive in curr_quarter['drives']:
+            if curr_drive not in max_drives_by_drive:
+                max_drives_by_drive[curr_drive] = 0
+            curr_quarter['drives'][curr_drive] = max(max_drives_by_drive[curr_drive],
+                                                     curr_quarter['drives'][curr_drive])
+
+    filtered_agg_data: list[dict[str, str|dict[str, int]]] = []
+    for curr_quarter in aggregated_data:
+        filtered_quarter: dict[str, str|dict[str, int]] = {
+            'calendar_quarter': curr_quarter['calendar_quarter'],
+            'drives': {},
+        }
+        for curr_drive in curr_quarter['drives']:
+            if curr_quarter['drives'][curr_drive] >= args.min_drives:
+                filtered_quarter['drives'][curr_drive] = curr_quarter['drives'][curr_drive]
+
+        filtered_agg_data.append(filtered_quarter)
+
+    return filtered_agg_data
+
+
+def _get_sorted_drive_models(aggregated_data: list[dict[str, str | int]]) -> tuple[str, ...]:
+    drives_set: set[str] = set()
+    for quarterly_data in aggregated_data:
+        for curr_drive in quarterly_data['drives']:
+            if curr_drive not in drives_set:
+                drives_set.add(curr_drive)
+
+    return tuple(sorted(drives_set))
+
+
+def _generate_viz_csv(args: argparse.Namespace,
+                      sorted_drive_models: tuple[str, ...],
+                      aggregated_data: list[dict[str, str|dict[str, int]]]) -> None:
+    csv_fieldnames: list[str] = ["calendar_quarter"]
+    csv_fieldnames.extend( sorted_drive_models )
+
+    with open(args.drive_distribution_csv, "w") as csv_handle:
+        output_csv: csv.DictWriter[str] = csv.DictWriter(csv_handle, fieldnames=csv_fieldnames)
+        output_csv.writeheader()
+
+        for curr_quarter_data in aggregated_data:
+
+            data_row: dict[str, str | int] = {
+                'calendar_quarter': curr_quarter_data['calendar_quarter'],
+            }
+            data_row.update(curr_quarter_data['drives'])
+
+            output_csv.writerow(data_row)
+
+
 def _main() -> None:
-    args = _parse_args()
+    args: argparse.Namespace = _parse_args()
     drives_of_interest_regex = _read_drives_of_interest_regexes(args)
-    #print(json.dumps(drives_of_interest_regex, indent=4))
     daily_drive_distribution: dict[str, dict[str, int]] = _get_daily_drive_distribution(
         args, drives_of_interest_regex)
-    #print(json.dumps(daily_drive_distribution, indent=4, sort_keys=True))
-    aggregated_data: list[dict[str, str | int]] = _aggregate_data(daily_drive_distribution)
-    print(json.dumps(aggregated_data, indent=4, sort_keys=True)) 
+    aggregated_data: list[dict[str, str|dict[str, int]]] = _aggregate_data(daily_drive_distribution)
+    filtered_aggregated_data: list[dict[str, str|dict[str, int]]] = _apply_min_drive_filter(
+        args, aggregated_data )
+    sorted_drive_models: tuple[str, ...] = _get_sorted_drive_models(filtered_aggregated_data)
+    _generate_viz_csv(args, sorted_drive_models, filtered_aggregated_data)
 
 
 if __name__ == "__main__":
