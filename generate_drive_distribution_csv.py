@@ -146,6 +146,8 @@ def _apply_min_drive_filter(args: argparse.Namespace,
                                                      curr_quarter['drives'][curr_drive])
 
     filtered_agg_data: list[dict[str, str|dict[str, int]]] = []
+
+    # Remove drives that don't hit min drives
     for curr_quarter in aggregated_data:
         filtered_quarter: dict[str, str|dict[str, int]] = {
             'calendar_quarter': curr_quarter['calendar_quarter'],
@@ -157,7 +159,22 @@ def _apply_min_drive_filter(args: argparse.Namespace,
 
         filtered_agg_data.append(filtered_quarter)
 
-    return filtered_agg_data
+    # Trim any empty rows from the beginning of data now that we dropped low-drive-count columns
+    trimmed_filtered_agg_data: list[dict[str, str | dict[str, int]]] = []
+    have_hit_row_with_data: bool = False
+    for filtered_quarter in filtered_agg_data:
+        # If we hit an empty row when we still haven't hit a non-empty row, drop this empty row
+        if not have_hit_row_with_data:
+            if not filtered_quarter['drives']:
+                continue
+
+            # Once we have hit our first non-empty row, include them all
+            have_hit_row_with_data = True
+
+        # Once we have hit our first non-empty row, include them all
+        trimmed_filtered_agg_data.append(filtered_quarter)
+
+    return trimmed_filtered_agg_data
 
 
 def _get_sorted_drive_models(aggregated_data: list[dict[str, str | int]]) -> tuple[str, ...]:
