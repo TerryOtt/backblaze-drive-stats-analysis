@@ -50,7 +50,7 @@ def _main() -> None:
                         drive_model_to_mfr_cache[row_model] = row_mfr
                         break
                 if not got_pattern_match:
-                    print(f"\tSkipping {row_model}")
+                    # print(f"\tSkipping {row_model}")
                     ignored_models.add(row_model)
                     continue
 
@@ -61,9 +61,40 @@ def _main() -> None:
 
             mfr_count_per_date[row_date][row_mfr] += 1
 
-    print(json.dumps(mfr_count_per_date, indent=4, sort_keys=True))
+    quarterly_aggregated_data: dict[str, dict[str, int]] = {}
+    quarter_lookup_by_month: dict[str, int] = {
+        '01': 1,
+        '02': 1,
+        '03': 1,
+
+        '04': 2,
+        '05': 2,
+        '06': 2,
+
+        '07': 3,
+        '08': 3,
+        '09': 3,
+
+        '10': 4,
+        '11': 4,
+        '12': 4,
+    }
+    for curr_date in mfr_count_per_date:
+        quarter_str:str = f"{curr_date[:4]} Q{str(quarter_lookup_by_month[curr_date[5:7]])}"
+
+        if quarter_str not in quarterly_aggregated_data:
+            quarterly_aggregated_data[quarter_str] = {}
+
+        for curr_mfr in mfr_count_per_date[curr_date]:
+            if curr_mfr not in quarterly_aggregated_data[quarter_str]:
+                quarterly_aggregated_data[quarter_str][curr_mfr] = 0
+
+            # Aggregate with max daily drives seen during the quarter
+            quarterly_aggregated_data[quarter_str][curr_mfr] = max(quarterly_aggregated_data[quarter_str][curr_mfr],
+                                                          mfr_count_per_date[curr_date][curr_mfr])
 
 
+    print(json.dumps(quarterly_aggregated_data, indent=4, sort_keys=True))
 
 
 if __name__ == "__main__":
