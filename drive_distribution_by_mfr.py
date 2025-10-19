@@ -26,7 +26,7 @@ def _main() -> None:
     drive_model_to_mfr_cache: dict[str, str] = {}
     for i, data_batch in enumerate(parquet_handle.iter_batches(batch_size=batch_size, columns=columns)):
         batch_dataframe: pandas.DataFrame = data_batch.to_pandas()
-        #print( f"Processing batch {i+1:3d} with {len(batch_dataframe):9,} rows" )
+        print( f"Processing batch {i+1:3d} with {len(batch_dataframe):9,} rows" )
         for row in batch_dataframe.itertuples():
             row_date: str = row.date.isoformat()
             row_model: str = row.model
@@ -50,7 +50,7 @@ def _main() -> None:
                         drive_model_to_mfr_cache[row_model] = row_mfr
                         break
                 if not got_pattern_match:
-                    print(f"Skipping {row_model}")
+                    print(f"\tSkipping {row_model}")
                     ignored_models.add(row_model)
                     continue
 

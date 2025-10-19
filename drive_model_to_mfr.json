@@ -1,11 +1,17 @@
 {
   "\\bHU[HS]72": "HGST",
-  "\\bHGST\\s+HMS": "HGST",
-  "\\bST\\d+(LM|NM|DM)\\d+": "Seagate",
-  "\\bHDWF180": "Toshiba",
-  "\\bMG(0[789]|10)": "Toshiba",
+  "\\bHGST\\s+(HMS|HDS)": "HGST",
+  "\\bHitachi\\s+(HDS|HDT)": "HGST",
+  "\\bST\\d+(LM|NM|DM|DX)\\d+": "Seagate",
+  "\\bST\\w+$": "Seagate",
+  "\\bHDW[EF]\\d+": "Toshiba",
+  "\\bMG(0[789]|1[01])": "Toshiba",
   "\\bMQ01ABF": "Toshiba",
+  "\\bMD04": "Toshiba",
+  "\\bTOSHIBA\\s+DT01": "Toshiba",
   "\\bWD\\d+LP[CV]X": "Western Digital",
   "\\bWD\\d+BPKT": "Western Digital",
-  "\\bWU[HS]72": "Western Digital"
+  "\\bWD\\d+EFRX": "Western Digital",
+  "\\bWU[HS]72": "Western Digital",
+  "\\bWD\\d+\\w+$": "Western Digital"
 }
