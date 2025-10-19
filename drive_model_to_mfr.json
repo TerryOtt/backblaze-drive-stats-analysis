@@ -1,0 +1,11 @@
+{
+  "\\bHU[HS]72": "HGST",
+  "\\bHGST\\s+HMS": "HGST",
+  "\\bST\\d+(LM|NM|DM)\\d+": "Seagate",
+  "\\bHDWF180": "Toshiba",
+  "\\bMG(0[789]|10)": "Toshiba",
+  "\\bMQ01ABF": "Toshiba",
+  "\\bWD\\d+LP[CV]X": "Western Digital",
+  "\\bWD\\d+BPKT": "Western Digital",
+  "\\bWU[HS]72": "Western Digital"
+}
