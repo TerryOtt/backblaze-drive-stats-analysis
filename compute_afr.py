@@ -19,7 +19,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _clean_drive_model_str(drive_model_str: str) -> str:
-    """Clean up whitespace and deal with inconconsistent model names.
+    """Clean up whitespace and deal with inconsistent model names.
     :param drive_model_str: Drive model string from CSV
     :return: model string with all extra whitespace removed
     """
@@ -32,15 +32,15 @@ def _clean_drive_model_str(drive_model_str: str) -> str:
     # Example: raw data includes both "WUH721816ALE6L4" and "WDC WUH721816ALE6L4" models,
     #          which are obviously the same thing. WOMP WOMP.
     if len(model_string_tokens) > 1:
-	# Compare last token to regular expressions that are drives of interest
-	# 	If the regular expression matches, use final token as drive model
-        drive_models_of_interest_patterns: tuple(str, ...) = (
+        # Compare last token to regular expressions that are drives of interest
+        # 	If the regular expression matches, use final token as drive model
+        drive_models_of_interest_patterns: tuple[str, ...] = (
             r'[HW]U[SH]72\d+',
             r'ST\d+NM',
             r'MG\d{2}',
         )
 
-	# re.match only checks for matches at the start of the string, hence no need for ^ or \b
+        # re.match only checks for matches at the start of the string, hence no need for ^ or \b
         for curr_pattern in drive_models_of_interest_patterns:
             if re.match( curr_pattern, model_string_tokens[-1] ):
                 return model_string_tokens[-1]
