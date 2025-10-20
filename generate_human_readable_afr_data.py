@@ -7,17 +7,17 @@ import re
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Convert AFR CSV to human-readable CSV")
-    parser.add_argument("trino_csv", help="Path to CSV with raw data from Trino")
+    parser.add_argument("raw_csv", help="Path to CSV with raw data from afr_parquet_to_csv")
     parser.add_argument("drive_model_regex_json", help="Path to JSON file with drive model regexes")
     parser.add_argument("human_readable_csv", help="Path to human-readable CSV")
 
     return parser.parse_args()
 
 
-def _read_trino_csv(args: argparse.Namespace) -> dict[str, dict[str, dict[str, int]]]:
+def _read_raw_csv(args: argparse.Namespace) -> dict[str, dict[str, dict[str, int]]]:
     known_models: set[str] = set()
     trino_data_by_drive_model: dict[str, dict[str, dict[str, int]]] = {}
-    with open(args.trino_csv, "r") as afr_csv:
+    with open(args.raw_csv, "r") as afr_csv:
         csv_reader:csv.DictReader[str] = csv.DictReader(afr_csv)
 
         for curr_csv_row in csv_reader:
@@ -224,7 +224,7 @@ def _generate_output_csv(
 
         csv_writer.writeheader()
 
-        print(json.dumps(column_names, indent=2))
+        # print(json.dumps(column_names, indent=2))
         print(f"Max quarters of data for any drive model: {max_quarters}")
 
         agg_increments_per_year: int = 4
@@ -256,7 +256,7 @@ def _generate_output_csv(
 def _main():
     args: argparse.Namespace = _parse_args()
 
-    trino_data: dict[str, dict[str, dict[str, int]]] = _read_trino_csv(args)
+    trino_data: dict[str, dict[str, dict[str, int]]] = _read_raw_csv(args)
     human_readable_data: dict[str, list[dict[str, int | float | str]]] = \
         _generate_human_readable_data(args, trino_data)
 

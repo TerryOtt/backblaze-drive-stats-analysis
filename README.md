@@ -1,10 +1,36 @@
 # backblaze-drive-stats-analysis
 
-## Update 
+## Update After Local Parquet Update
 
-* Get local Parquet data (backblaze-drive-stats-pyiceberg)
-* ETL to CSV
-  * afr_parquet_to_csv
+```bash 
+$ (Get local Parquet data (backblaze-drive-stats-pyiceberg))
+$ source .venv/bin/activate
+$ time python afr_parquet_to_csv.py backblaze_drive_stats_2025q3.parquet backblaze_drive_stats_2025q3_afr_input.csv
+real    10m51.702s
+user    10m52.714s
+sys     0m1.705s
+
+$ ls *.csv
+-rw-rw-r-- 1 ubuntu ubuntu 9317028 Oct 20 19:17 backblaze_drive_stats_2025q3.csv
+
+$ wc -l backblaze_drive_stats_2025q3_afr_input.csv
+269921 backblaze_drive_stats_2025q3_afr_input.csv
+-rw-rw-r-- 1 ubuntu ubuntu 9317028 Oct 20 19:17 backblaze_drive_stats_2025q3_afr_input.csv
+
+$ time python generate_human_readable_afr_data.py backblaze_drive_stats_2025q3_afr_input.csv \
+Max quarters of data for any drive model: 33
+drives_of_interest_regexes.json afr_2025q3_human_readable.csv
+
+real    0m1.103s
+user    0m1.067s
+sys     0m0.036s
+
+ls -laF afr_2025q3_human_readable.csv
+-rw-rw-r-- 1 ubuntu ubuntu 3326 Oct 20 20:39 afr_2025q3_human_readable.csv
+
+wc -l afr_2025q3_human_readable.csv
+34 afr_2025q3_human_readable.csv
+```
 * ETL from CSV to AFR CSV
 * ETL from AFR CSV to Excel CSV
 
