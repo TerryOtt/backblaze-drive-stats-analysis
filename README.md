@@ -1,5 +1,13 @@
 # backblaze-drive-stats-analysis
 
+## Update 
+
+* Get local Parquet data (backblaze-drive-stats-pyiceberg)
+* ETL to CSV
+  * afr_parquet_to_csv
+* ETL from CSV to AFR CSV
+* ETL from AFR CSV to Excel CSV
+
 ## TL;DR -- Gimme The Data
 
 Instructions for Ubuntu 24.04.
