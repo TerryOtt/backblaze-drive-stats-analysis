@@ -37,7 +37,6 @@ def _main() -> None:
             parquet_data[row_model][row_date]['drive_count'] += 1
             parquet_data[row_model][row_date]['failure_count'] += row_failure
 
-        break
     csv_columns: list[str] = ['model', 'date', 'drive_count', 'failure_count']
     with open(args.output_csv, 'w', newline='') as csvfile:
         csv_writer = csv.DictWriter(csvfile, fieldnames=csv_columns)
@@ -53,6 +52,7 @@ def _main() -> None:
                 }
 
                 csv_writer.writerow(csv_row)
+
 
 if __name__ == "__main__":
     _main()
