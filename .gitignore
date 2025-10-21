@@ -2,3 +2,4 @@
 *.csv
 .idea/
 *.parquet
+__pycache__/

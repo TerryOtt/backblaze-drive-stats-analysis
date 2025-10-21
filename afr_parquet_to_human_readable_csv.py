@@ -9,6 +9,40 @@ import time
 import pandas
 import pyarrow.parquet
 
+# Right mix for runtime
+#  - c8g.4xlarge (16 CPU, 32 GB RAM)
+#  - run with 12 workers
+#  - Finishes in 2.5 mins
+#  - Doesn't even use 1GB RAM now that I switched from
+#       multiprocessing.Queue (no max size) to
+#       multiprocessing.SimpleQueue.
+#  - Literally saving 150 GB of RAM by find/replace drop in
+#       for SimpleQueue
+
+
+# Parquet batch size
+parquet_batch_size: int = 1024 # * 128
+
+
+# Define this once, not every time we need a date lookup
+_month_quarter_map: dict[str, str] = {
+    '01': '1',
+    '02': '1',
+    '03': '1',
+
+    '04': '2',
+    '05': '2',
+    '06': '2',
+
+    '07': '3',
+    '08': '3',
+    '09': '3',
+
+    '10': '4',
+    '11': '4',
+    '12': '4',
+}
+
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Convert Parquet to CSV')
@@ -20,56 +54,122 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _parquet_batch_worker(processing_batch_queue: multiprocessing.Queue):
+def _convert_date_to_year_quarter(drive_entry_date: str) -> str:
+    month_quarter: str = f"{drive_entry_date[:4]} Q{_month_quarter_map[drive_entry_date[5:7]]}"
+    return month_quarter
+
+
+def _parquet_batch_worker(processing_batch_queue: multiprocessing.SimpleQueue,
+                          daily_drive_health_report_queue: multiprocessing.SimpleQueue) -> None:
 
     while True:
         queue_contents: pyarrow.RecordBatch | None = processing_batch_queue.get()
 
         if queue_contents is None:
-            print("Worker got its poison pill, no more work")
+            print("Parquet batch worker got a poison pill, no more work")
             break
 
         print( f"Worker got record batch with {queue_contents.num_rows} rows")
         pandas_df: pandas.DataFrame = queue_contents.to_pandas()
-        for _ in pandas_df.itertuples(index=False):
-            #print("Got valid row tuple from deserialized dataframe")
-            pass
+        multi_stats_msg: list[dict[str, str | bool] | None] = [None] * parquet_batch_size
+        multi_stats_msg_index: int = 0
+        for data_record in pandas_df.itertuples(index=False):
+            # print("Got valid row data record from deserialized dataframe")
+
+            # Turn the date into a year/quarter combo
+            year_quarter: str = _convert_date_to_year_quarter(data_record.date.isoformat())
+
+            afr_stats_msg: dict[str, str | bool] = {
+                'model'         : data_record.model,
+                'year_quarter'  : year_quarter,
+            }
+            if data_record.failure == 1:
+                afr_stats_msg['failure'] = True
+            else:
+                afr_stats_msg['failure'] = False
+
+            multi_stats_msg[multi_stats_msg_index] = afr_stats_msg
+
+            multi_stats_msg_index += 1
+
+        # Send the multi-stats-msg to ze keeper of ze stats
+        daily_drive_health_report_queue.put(multi_stats_msg)
+
+    print("Parquet batch worker sending poison pill to stats worker then bailing")
+    daily_drive_health_report_queue.put(None)
+
+
+def _afr_stats_worker(daily_drive_health_report_queue: multiprocessing.SimpleQueue, args: argparse.Namespace) -> None:
+    poison_pills_received: int = 0
+    data_records_received: int = 0
+    print( "AFR stats worker starting" )
+    while True:
+        queue_contents: list[dict[str, str | int]] | None = daily_drive_health_report_queue.get()
+
+        if queue_contents is None:
+            poison_pills_received += 1
+            print(f"Stats worker has received {poison_pills_received} / {args.workers} poison pills")
+            if poison_pills_received < args.workers:
+                continue
+
+            print("Stats worker got all poison pills, no more stats work to do, bailing")
+            break
+
+        # TO DO: process a multi-stats message
+        for i in range(parquet_batch_size):
+            if queue_contents[i]:
+                data_records_received += 1
+            else:
+                break
+
+    print(f"Stats worker terminating after getting {data_records_received:11,} records")
 
 
 def _main() -> None:
     args: argparse.Namespace = _parse_args()
-    afr_stats = {}
     with open(args.drive_patterns_json, 'r') as pattern_handle:
         drive_patterns: list[str] = json.load(pattern_handle)
 
     # Set up multiprocessing
-    processing_batch_queue: multiprocessing.Queue = multiprocessing.Queue(maxsize=args.workers)
+    processing_batch_queue: multiprocessing.SimpleQueue = multiprocessing.SimpleQueue() #maxsize=args.workers*32)
+
+    # Note: intentionally setting a yuuuuge max size. These messages are tiny and we don't want to block
+    #   the batch workers unnecessarily
+    daily_drive_health_report_queue: multiprocessing.SimpleQueue = multiprocessing.SimpleQueue() #maxsize=args.workers*4096)
 
     child_processes: list[multiprocessing.Process] = []
 
     for i in range(args.workers):
-        worker_handle = multiprocessing.Process(target=_parquet_batch_worker, args=(processing_batch_queue,))
+        worker_handle = multiprocessing.Process(target=_parquet_batch_worker,
+                                                args=(processing_batch_queue,daily_drive_health_report_queue))
         worker_handle.start()
         child_processes.append(worker_handle)
 
     print(f"Started {args.workers} workers for pyarrow batches")
 
+    # Start AFR stats worker
+    worker_handle = multiprocessing.Process(target=_afr_stats_worker,
+                                            args=(daily_drive_health_report_queue, args))
+    worker_handle.start()
+    child_processes.append(worker_handle)
+
     with pyarrow.parquet.ParquetFile(args.input_parquet) as parquet_handle:
         #print(parquet_handle.schema)
         columns: list[str] = ['model', 'date', 'failure']
-        batch_size: int = 1024 * 1024
-
-        for curr_batch in parquet_handle.iter_batches(batch_size=batch_size, columns=columns):
+        for curr_batch in parquet_handle.iter_batches(batch_size=parquet_batch_size, columns=columns):
             processing_batch_queue.put(curr_batch)
 
         print("All batches sent to workers")
 
-    # Poison pill the pool, one per worker
+    # Poison pill the batchworker pool, one per worker
     for _ in range(args.workers):
         processing_batch_queue.put(None)
-    print("All poison pills sent to workers")
+    print("All poison pills sent to batch workers")
 
-    # Wait for workers to rejoin
+    # Note: when batch workers are done, they poison pill stats worker
+    # so that stats worker knows when it's time to come home
+
+    # Wait for ALL workers to rejoin (batch workers + AFR stats worker
     print("Waiting for all workers to finish")
     while child_processes:
         handle_to_join: multiprocessing.Process = child_processes.pop()
