@@ -11,17 +11,15 @@ import pyarrow.parquet
 
 # Right mix for runtime
 #  - c8g.2xlarge (8 CPU, 16 GB RAM)
-#  - run with 8 workers
-#  - Finishes in 2.5 mins
-#  - Doesn't even use 1GB RAM now that I switched from
+#  - run with default workers and parquet max batch size
+#  - load 8.5 on 8 CPU machine
+#  - consumes 5.0 GB of the 16 GB RAM (~31%)
+#  - Finishes in 160 seconds (2 mins, 40 seconds)
+#  - *Massive* RAM savings now that I switched from
 #       multiprocessing.Queue (no max size) to
 #       multiprocessing.SimpleQueue.
 #  - Literally saving 150 GB of RAM by find/replace drop in
 #       for SimpleQueue
-
-
-# Parquet batch size
-parquet_batch_size: int = 1024 * 128
 
 # Define this once, not every time we need a date lookup
 _month_quarter_map: dict[str, str] = {
@@ -45,9 +43,17 @@ _month_quarter_map: dict[str, str] = {
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Convert Parquet to CSV')
-    worker_pool_size_default: int = multiprocessing.cpu_count()
+
+    # Back off max CPU count as we have stats worker process pegging a CPU and then leave one for
+    #   background/OS
+    worker_pool_size_default: int = multiprocessing.cpu_count() - 2
     parser.add_argument('--workers', help=f"Size of worker pool, default: {worker_pool_size_default}",
                         type=int, default=worker_pool_size_default)
+    parquet_max_batch_size_default: int = 1024 * 128
+    parser.add_argument('--max-batch', help="Max size of Parquet record batch, " +
+                                                         f"default: {parquet_max_batch_size_default:,}",
+                        type=int, default=parquet_max_batch_size_default)
+
     parser.add_argument('drive_patterns_json', help='Path to JSON with drive regexes')
     parser.add_argument('input_parquet', help='Path to Parquet created from Iceberg table')
     return parser.parse_args()
@@ -70,9 +76,15 @@ def _parquet_batch_worker(processing_batch_queue: multiprocessing.SimpleQueue,
 
         #print( f"Worker got record batch with {queue_contents.num_rows} rows")
         pandas_df: pandas.DataFrame = queue_contents.to_pandas()
-        multi_stats_msg: list[dict[str, str | bool] | None] = [None] * parquet_batch_size
-        multi_stats_msg_index: int = 0
-        for data_record in pandas_df.itertuples(index=False):
+
+        # How many records in this dataframe?
+        num_records_in_batch: int = len(pandas_df)
+
+        # Since we know how many records in this dataframe, pre-allocate a batch results message
+        #   of the proper size
+        multi_stats_msg: list[dict[str, str | bool] | None] = [None] * num_records_in_batch
+
+        for record_index, data_record in enumerate(pandas_df.itertuples(index=False)):
             # print("Got valid row data record from deserialized dataframe")
 
             # Turn the date into a year/quarter combo
@@ -87,14 +99,13 @@ def _parquet_batch_worker(processing_batch_queue: multiprocessing.SimpleQueue,
             else:
                 afr_stats_msg['failure'] = False
 
-            multi_stats_msg[multi_stats_msg_index] = afr_stats_msg
+            # Pack afr stats message into the proper allocated spot in the queue stats container
+            multi_stats_msg[record_index] = afr_stats_msg
 
-            multi_stats_msg_index += 1
-
-        # Send the multi-stats-msg to ze keeper of ze stats
         daily_drive_health_report_queue.put(multi_stats_msg)
 
-    print("\tParquet reader worker terminating cleanly")
+    #print("\tParquet reader worker terminating cleanly")
+    # Need to send poison pill to stats worker to help it know when all work is done
     daily_drive_health_report_queue.put(None)
 
 
@@ -102,6 +113,7 @@ def _afr_stats_worker(daily_drive_health_report_queue: multiprocessing.SimpleQue
     poison_pills_received: int = 0
     data_records_received: int = 0
     print( "\tAFR stats worker: successfully started" )
+    processing_start_time: float = time.perf_counter()
     while True:
         queue_contents: list[dict[str, str | int]] | None = daily_drive_health_report_queue.get()
 
@@ -114,14 +126,17 @@ def _afr_stats_worker(daily_drive_health_report_queue: multiprocessing.SimpleQue
             #print("Stats worker got all poison pills, no more stats work to do, bailing")
             break
 
-        # TO DO: process a multi-stats message
-        for i in range(parquet_batch_size):
-            if queue_contents[i]:
-                data_records_received += 1
-            else:
-                break
+        # TO DO: process stats message
+        num_stats_entry_in_queue_msg: int = len(queue_contents)
+        data_records_received += num_stats_entry_in_queue_msg
 
-    print(f"\tAFR Stats worker terminating after getting {data_records_received:11,} records")
+    processing_end_time: float = time.perf_counter()
+    running_time: int = int(processing_end_time - processing_start_time)
+    records_per_second: int = data_records_received // running_time
+
+    print("\tAFR stats worker: processing complete, " +
+          f"processed {data_records_received:11,} drive health records in {running_time:,} seconds" )
+    print(f"\tAFR stats worker: processed {records_per_second:,} records/second")
 
 
 def _main() -> None:
@@ -142,7 +157,7 @@ def _main() -> None:
         worker_handle.start()
         child_processes.append(worker_handle)
 
-    print(f"\tParent: launched {args.workers} Parquet reader worker processes")
+    print(f"\tParent: launched {args.workers} Parquet reader worker processes (modify with --workers)")
 
     # Start AFR stats worker
     worker_handle = multiprocessing.Process(target=_afr_stats_worker,
@@ -153,12 +168,13 @@ def _main() -> None:
     with pyarrow.parquet.ParquetFile(args.input_parquet) as parquet_handle:
         #print(parquet_handle.schema)
         columns: list[str] = ['model', 'date', 'failure']
-        for curr_batch in parquet_handle.iter_batches(batch_size=parquet_batch_size, columns=columns):
+        print(f"\tParent: using max Parquet batch size of {args.max_batch:,} records (modify with --max-batch)")
+        for curr_batch in parquet_handle.iter_batches(batch_size=args.max_batch, columns=columns):
             processing_batch_queue.put(curr_batch)
 
         print("\tParent: all work has been sent to Parquet reader workers")
 
-    # Poison pill the batchworker pool, one per worker
+    # Poison pill the batch worker pool, one per worker
     for _ in range(args.workers):
         processing_batch_queue.put(None)
     #print("All poison pills sent to batch workers")
@@ -171,8 +187,7 @@ def _main() -> None:
     while child_processes:
         handle_to_join: multiprocessing.Process = child_processes.pop()
         handle_to_join.join()
-
-    print("\tParent all workers rejoined cleanly, terminating cleanly")
+    print("\tParent: all workers have rejoined, all processing completed successfully!")
 
 
 if __name__ == "__main__":
