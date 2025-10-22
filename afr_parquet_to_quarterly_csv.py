@@ -19,6 +19,31 @@ import time
 #
 #       Literally saving 150 GB of RAM by find/replace drop in replace from Queue to SimpleQueue
 
+
+# TO DO: investigate polars for lazy reading parquet instead of pyarrow and pandas
+#
+# import polars
+# polars_lazy_df = polars.scan_parquet("file.parquet")
+#
+# https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html
+#
+# Chain operations on lazy frame to update query plan that will be run
+#
+# selected_columns = [
+#             'model',
+#             'date',
+#             'serial_number',
+#             'failure',
+# ]
+# optimized_lazy_frame = polars.scan_parquet("file.parquet").select(select_columns)
+#
+# Now iterate over batches
+# for polars_materialized_df in optimized_lazy_frame.fetch_batches(batch_size=1024):
+#       # materialized_df is the first one that actually has data in it, work was delayed as long as possible
+#       print(f"Number of records in this data frame: {len(polars_materialized_df):,}")
+#
+#       # Now send that Polars dataframe over the queue to a worker
+
 # Define this once, not every time we need a date lookup
 _month_quarter_map: dict[str, str] = {
     '01': '1',
@@ -184,6 +209,25 @@ def _normalize_drive_model_name(raw_drive_model: str) -> str:
     return normalized_drive_model_name
 
 
+def _add_drive_deploy_counts_to_model_names(drive_quarterly_afr_calc_data: dict[str, dict[str, dict[str, int]]],
+                                            drive_serial_nums_per_model: dict[str, set[str]]) -> None:
+
+    old_names: list[str] = []
+    for curr_drive_model in drive_quarterly_afr_calc_data:
+        if curr_drive_model not in drive_serial_nums_per_model:
+            raise ValueError(f"Did not find drive {curr_drive_model} in serial numbers per model")
+        old_names.append(curr_drive_model)
+
+    for curr_old_name in old_names:
+        drive_count: int = len(drive_serial_nums_per_model[curr_old_name])
+        new_name: str = f"{curr_old_name} ({drive_count:,})"
+
+        # Remove data under old key, add under new key
+        drive_quarterly_afr_calc_data[new_name] = drive_quarterly_afr_calc_data.pop(curr_old_name)
+
+    print("\tAdded drive deployment counts to model names")
+
+
 def _cull_drive_models(args: argparse.Namespace,
                        drive_quarterly_afr_calc_data: dict[str, dict[str, dict[str, int]]],
                        drive_serial_nums_per_model: dict[str, set[str]]) -> None:
@@ -279,6 +323,9 @@ def _afr_stats_worker(daily_drive_health_report_queue: multiprocessing.SimpleQue
 
     # Cull any drive models without enough deployed drives
     _cull_drive_models(args, drive_quarterly_afr_calc_data, drive_serial_nums_per_model)
+
+    # Turn "WDC WUH721816ALE6L4" into "WDC WUH721816ALE6L4 (27,689)"
+    _add_drive_deploy_counts_to_model_names(drive_quarterly_afr_calc_data, drive_serial_nums_per_model)
 
     # Send our data with inputs for AFR calcs back to parent
     drive_afr_data_queue.put(drive_quarterly_afr_calc_data)
@@ -391,7 +438,10 @@ def _main() -> None:
     afr_calc_input_data: dict[str, dict[str, dict[str, int]]] = _get_afr_calc_input_data(args)
     computed_drive_quarterly_afr: dict[str, dict[str, float]] = _compute_drive_quarterly_afr(afr_calc_input_data)
 
-    # print(json.dumps(computed_drive_quarterly_afr, indent=4, sort_keys=True))
+    # Drop our reference to AFR calc input data as it's no longer needed
+    del afr_calc_input_data
+
+    print(json.dumps(computed_drive_quarterly_afr, indent=4, sort_keys=True))
 
 
 if __name__ == "__main__":
