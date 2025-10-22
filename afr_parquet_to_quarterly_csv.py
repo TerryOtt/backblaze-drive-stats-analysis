@@ -128,9 +128,10 @@ def _parquet_batch_worker(processing_batch_queue: multiprocessing.SimpleQueue,
 
         daily_drive_health_report_queue.put(multi_stats_msg)
 
-    #print("\tParquet reader worker terminating cleanly")
     # Need to send poison pill to stats worker to help it know when all work is done
     daily_drive_health_report_queue.put(None)
+
+    # print("\tParquet reader worker terminating cleanly")
 
 
 def _afr_stats_worker(daily_drive_health_report_queue: multiprocessing.SimpleQueue, args: argparse.Namespace) -> None:
@@ -159,7 +160,7 @@ def _afr_stats_worker(daily_drive_health_report_queue: multiprocessing.SimpleQue
     records_per_second: int = data_records_received // running_time
 
     print("\tAFR stats worker: processing complete")
-    print("\tAFR stats worker: processed {data_records_received:11,} drive health records " +
+    print(f"\tAFR stats worker: processed {data_records_received:11,} drive health records " +
           f"(filtered by drive models of interest) in {running_time:,} seconds" )
     print(f"\tAFR stats worker: processed {records_per_second:,} records/second")
 
