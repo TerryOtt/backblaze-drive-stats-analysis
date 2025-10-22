@@ -10,8 +10,8 @@ import pandas
 import pyarrow.parquet
 
 # Right mix for runtime
-#  - c8g.4xlarge (16 CPU, 32 GB RAM)
-#  - run with 12 workers
+#  - c8g.2xlarge (8 CPU, 16 GB RAM)
+#  - run with 8 workers
 #  - Finishes in 2.5 mins
 #  - Doesn't even use 1GB RAM now that I switched from
 #       multiprocessing.Queue (no max size) to
@@ -69,7 +69,7 @@ def _parquet_batch_worker(processing_batch_queue: multiprocessing.SimpleQueue,
             print("Parquet batch worker got a poison pill, no more work")
             break
 
-        print( f"Worker got record batch with {queue_contents.num_rows} rows")
+        #print( f"Worker got record batch with {queue_contents.num_rows} rows")
         pandas_df: pandas.DataFrame = queue_contents.to_pandas()
         multi_stats_msg: list[dict[str, str | bool] | None] = [None] * parquet_batch_size
         multi_stats_msg_index: int = 0
