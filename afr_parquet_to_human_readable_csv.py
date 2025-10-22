@@ -14,12 +14,11 @@ import pyarrow.parquet
 #  - run with default workers and parquet max batch size
 #  - load 8.5 on 8 CPU machine
 #  - consumes 5.0 GB of the 16 GB RAM (~31%)
-#  - Finishes in 160 seconds (2 mins, 40 seconds)
+#  - Finishes in 130 seconds (2 mins, 10 seconds)
 #  - *Massive* RAM savings now that I switched from
-#       multiprocessing.Queue (no max size) to
-#       multiprocessing.SimpleQueue.
-#  - Literally saving 150 GB of RAM by find/replace drop in
-#       for SimpleQueue
+#       multiprocessing.Queue (no max size) to multiprocessing.SimpleQueue.
+#
+#       Literally saving 150 GB of RAM by find/replace drop in replace from Queue to SimpleQueue
 
 # Define this once, not every time we need a date lookup
 _month_quarter_map: dict[str, str] = {
@@ -65,7 +64,15 @@ def _convert_date_to_year_quarter(drive_entry_date: str) -> str:
 
 
 def _parquet_batch_worker(processing_batch_queue: multiprocessing.SimpleQueue,
-                          daily_drive_health_report_queue: multiprocessing.SimpleQueue) -> None:
+                          daily_drive_health_report_queue: multiprocessing.SimpleQueue,
+                          args: argparse.Namespace) -> None:
+
+    # Read the regexes for drive models  we care about
+    with open(args.drive_patterns_json, "r") as json_handle:
+        drive_model_regexes: list[str] = json.load(json_handle)
+
+    models_with_stats: set[str] = set()
+    models_seen: set[str] = set()
 
     while True:
         queue_contents: pyarrow.RecordBatch | None = processing_batch_queue.get()
@@ -80,12 +87,29 @@ def _parquet_batch_worker(processing_batch_queue: multiprocessing.SimpleQueue,
         # How many records in this dataframe?
         num_records_in_batch: int = len(pandas_df)
 
-        # Since we know how many records in this dataframe, pre-allocate a batch results message
-        #   of the proper size
-        multi_stats_msg: list[dict[str, str | bool] | None] = [None] * num_records_in_batch
+        multi_stats_msg: list[dict[str, str | bool]] = []
 
         for record_index, data_record in enumerate(pandas_df.itertuples(index=False)):
             # print("Got valid row data record from deserialized dataframe")
+
+            # Is this the first time this worker has seen this drive model string?
+            if data_record.model not in models_seen:
+
+                # Mark that we've seen it
+                models_seen.add(data_record.model)
+
+                # Scan regexes to see if we should track stats on it
+                for curr_regex in drive_model_regexes:
+
+                    # If we find a match, add it to set of models we're tracking and stop looking further
+                    if re.search(curr_regex, data_record.model):
+                        models_with_stats.add(data_record.model)
+                        break
+
+            # Check if we are tracking stats on it
+            if data_record.model not in models_with_stats:
+                # Ignore it
+                continue
 
             # Turn the date into a year/quarter combo
             year_quarter: str = _convert_date_to_year_quarter(data_record.date.isoformat())
@@ -99,8 +123,8 @@ def _parquet_batch_worker(processing_batch_queue: multiprocessing.SimpleQueue,
             else:
                 afr_stats_msg['failure'] = False
 
-            # Pack afr stats message into the proper allocated spot in the queue stats container
-            multi_stats_msg[record_index] = afr_stats_msg
+            # Append this stats message into the queue stats container
+            multi_stats_msg.append(afr_stats_msg)
 
         daily_drive_health_report_queue.put(multi_stats_msg)
 
@@ -134,8 +158,9 @@ def _afr_stats_worker(daily_drive_health_report_queue: multiprocessing.SimpleQue
     running_time: int = int(processing_end_time - processing_start_time)
     records_per_second: int = data_records_received // running_time
 
-    print("\tAFR stats worker: processing complete, " +
-          f"processed {data_records_received:11,} drive health records in {running_time:,} seconds" )
+    print("\tAFR stats worker: processing complete")
+    print("\tAFR stats worker: processed {data_records_received:11,} drive health records " +
+          f"(filtered by drive models of interest) in {running_time:,} seconds" )
     print(f"\tAFR stats worker: processed {records_per_second:,} records/second")
 
 
@@ -153,7 +178,9 @@ def _main() -> None:
 
     for i in range(args.workers):
         worker_handle = multiprocessing.Process(target=_parquet_batch_worker,
-                                                args=(processing_batch_queue,daily_drive_health_report_queue))
+                                                args=(processing_batch_queue,
+                                                      daily_drive_health_report_queue,
+                                                      args) )
         worker_handle.start()
         child_processes.append(worker_handle)
 
@@ -168,7 +195,7 @@ def _main() -> None:
     with pyarrow.parquet.ParquetFile(args.input_parquet) as parquet_handle:
         #print(parquet_handle.schema)
         columns: list[str] = ['model', 'date', 'failure']
-        print(f"\tParent: using max Parquet batch size of {args.max_batch:,} records (modify with --max-batch)")
+        print(f"\tParent: using Parquet max batch size of {args.max_batch:,} records (modify with --max-batch)")
         for curr_batch in parquet_handle.iter_batches(batch_size=args.max_batch, columns=columns):
             processing_batch_queue.put(curr_batch)
 
