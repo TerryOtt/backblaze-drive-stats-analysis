@@ -173,20 +173,18 @@ def _get_afr_stats( args: argparse.Namespace,
                 args,
             )
         )
-        _drive_model_afr_worker(curr_drive_model, drive_model_mapping[curr_drive_model], original_source_lazyframe,
-                                args)
-        break
+        # _drive_model_afr_worker(curr_drive_model, drive_model_mapping[curr_drive_model], original_source_lazyframe,
+        #                         args)
+        # break
 
-    # with multiprocessing.Pool(processes=args.workers) as worker_pool:
-    #     afr_results: list[dict[str, float]] = worker_pool.starmap(_drive_model_afr_worker, worker_args)
-    #
-    #     for curr_drive_model in sorted(drive_model_mapping):
-    #         # Results from starmap are in the same order of the parameters passed in, so pull head of list
-    #         afr_stats[curr_drive_model] = afr_results.pop(0)
-    #
-    #     # Make sure we consumed all results from starmap and the list is empty
-    #     assert not afr_results
-    #     del afr_results
+    with multiprocessing.Pool(processes=args.workers) as worker_pool:
+        try:
+            result_idx: int = 0
+            sorted_drive_models: list[str] = sorted(drive_model_mapping)
+            for afr_result in worker_pool.starmap(_drive_model_afr_worker, worker_args):
+                afr_stats[sorted_drive_models[result_idx]] = afr_result
+        except RuntimeError as e:
+            print(f"Caught exception in parent: {e}")
 
     return afr_stats
 
