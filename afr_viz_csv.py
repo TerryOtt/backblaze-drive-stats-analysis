@@ -74,13 +74,13 @@ def _get_drive_model_mapping(args: argparse.Namespace,
     operation_start: float = time.perf_counter()
     drive_models: polars.Series = original_source_lazyframe.select("model").filter(
         polars.col("model").str.contains(multi_regex_pattern)
-    ).collect().to_series().unique().sort()
+    ).unique().sort("model").collect().to_series()
     operation_end: float = time.perf_counter()
     operation_duration: float = operation_end - operation_start
 
     # How many unique drive models and how much time?
-    print( f"\tRetrieved {len(drive_models):,} drive models names which matched patterns of interest in " +
-           f"{operation_duration:.03f} seconds")
+    print( f"\tRetrieved {len(drive_models):,} drive models names which matched patterns of interest "
+           f"from Polars datasource in {operation_duration:.03f} seconds")
 
     # Iterate over drive models to create normalized name -> [raw name from source, ...] mappings
     for current_drive_model in drive_models:
@@ -94,7 +94,7 @@ def _get_drive_model_mapping(args: argparse.Namespace,
 
 
 def _source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
-    print(f"\nSource lazyframe: local Parquet file, \"{args.parquet_file}\"")
+    print(f"\nPolars datasource: local Parquet file, \"{args.parquet_file}\"")
     source_lazyframe: polars.LazyFrame = polars.scan_parquet(args.parquet_file)
     return source_lazyframe
 
