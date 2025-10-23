@@ -173,11 +173,13 @@ def _get_afr_stats( args: argparse.Namespace,
                 args,
             )
         )
-        # _drive_model_afr_worker(curr_drive_model, drive_model_mapping[curr_drive_model], original_source_lazyframe,
-        #                         args)
-        # break
+        #afr_stats[curr_drive_model] = _drive_model_afr_worker(curr_drive_model, drive_model_mapping[curr_drive_model], original_source_lazyframe,
+                                #args)
+        #break
+    
+    ctx = multiprocessing.get_context("spawn")
 
-    with multiprocessing.Pool(processes=args.workers) as worker_pool:
+    with ctx.Pool(processes=args.workers) as worker_pool:
         try:
             result_idx: int = 0
             sorted_drive_models: list[str] = sorted(drive_model_mapping)
