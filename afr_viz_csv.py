@@ -135,8 +135,9 @@ def _drive_model_afr_worker(drive_model_normalized: str,
     # print(f"\t\t\tUnique serial number count: {unique_serialnum_count}")
 
     if unique_serialnum_count < args.min_drives:
-        print(f"\tINFO: culling data for drive model {drive_model_normalized} "
-              f"(drive count {unique_serialnum_count} < min of {args.min_drives}, modify with --min-drives)")
+        print(f"\tINFO: culling model \"{drive_model_normalized}\" "
+              f"(total deployed drive count of {unique_serialnum_count:,} < min of {args.min_drives:,}; "
+              "modify with --min-drives)")
         return None
 
     quarterly_afr: dict[str, int | dict[str, float]] = {
