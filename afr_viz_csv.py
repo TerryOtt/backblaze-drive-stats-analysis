@@ -115,13 +115,13 @@ def _source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
 def _get_unique_serial_nums_for_drive( args: argparse.Namespace,
                                        source_lazyframe: polars.LazyFrame,
                                        drive_model_raw_names: list[str] ) -> int:
-    unique_serial_count: int = 0
-    # Query unique serial numbers for these drive models
-    for batch_results_df in source_lazyframe.select("model", "serial_number").filter(
-            polars.col("model").str.contains_any(drive_model_raw_names)
-        ).select("serial_number").unique("serial_number").collect_batches(chunk_size=args.max_batch):
 
-        unique_serial_count += len(batch_results_df)
+    # Query unique serial numbers for these drive models
+    row_count_df: polars.DataFrame = source_lazyframe.select("model", "serial_number").filter(
+            polars.col("model").str.contains_any(drive_model_raw_names)
+        ).select("serial_number").unique("serial_number").select(polars.len()).collect()
+
+    unique_serial_count: int = row_count_df.item()
 
     return unique_serial_count
 
