@@ -156,13 +156,16 @@ def _drive_model_afr_worker(drive_model_normalized: str,
         "failure",
     ]
 
-    # Start with all columns so we can filter on model, but then filter out model
-    for curr_rows_batch in source_lazyframe.select(query_select_columns).filter(
-            polars.col("model").str.contains_any(drive_model_raw_names)
-        ).select(post_filter_select_columns).collect_batches(chunk_size=args.max_batch):
-        print(f"\t\t\tGot partial batch of AFR calc data from Polars with {len(curr_rows_batch)} records")
-
-        # TODO: can we group by date to use COUNT(failure) for drive_days on date and SUM(failure) for fail count?
+    # Don't need to collect batches here, at most a few thousand rows, just get it in one swing
+    afr_calc_data: polars.DataFrame = source_lazyframe.select(query_select_columns).filter(
+        polars.col("model").str.contains_any(drive_model_raw_names)
+    ).select(post_filter_select_columns).group_by("date").agg(
+        [
+            polars.col("failure").count().alias("drives_seen"),
+            polars.col("failure").sum().alias("failure_count"),
+        ]
+    ).sort("date").collect()
+    print(f"\t\t\tGot aggregated daily AFR calc data from Polars with {len(afr_calc_data):,} records")
 
     return quarterly_afr
 
