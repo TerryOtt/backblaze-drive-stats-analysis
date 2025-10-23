@@ -116,35 +116,20 @@ def _source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
     return source_lazyframe
 
 
-def _drive_model_afr_worker(drive_model_normalized: str,
-                            drive_model_raw_names: list[str],
-                            source_lazyframe: polars.LazyFrame,
-                            args: argparse.Namespace ) -> dict[str, int | dict[str, float]] | None:
-
-    print(f"\t\tWorker pool process starting on drive model {drive_model_normalized}...")
-    # print(f"\t\t\tDrive model names to query Polars datasource for: {json.dumps(drive_model_raw_names)}")
-
+def _get_unique_serial_nums_for_drive( source_lazyframe: polars.LazyFrame,
+                                       drive_model_raw_names: list[str] ) -> int:
+    unique_serial_count: int = 0
     # Query unique serial numbers for these drive models
-    unique_serialnum_count: int = 0
-    for curr_row_batch in source_lazyframe.select("model", "serial_number").filter(
+    for batch_results_df in source_lazyframe.select("model", "serial_number").filter(
             polars.col("model").str.contains_any(drive_model_raw_names)
-        ).select("serial_number").unique("serial_number").collect_batches():
+        ).select("serial_number").unique("serial_number").collect_batches(chunk_size=16*1024):
 
-        unique_serialnum_count += len(curr_row_batch)
+        unique_serial_count += len(batch_results_df)
 
-    # print(f"\t\t\tUnique serial number count: {unique_serialnum_count}")
+    return unique_serial_count
 
-    if unique_serialnum_count < args.min_drives:
-        print(f"\tINFO: culling model \"{drive_model_normalized}\" " 
-              f"(total deployed drive count of {unique_serialnum_count:,} < min of {args.min_drives:,}; "
-              "modify with --min-drives)")
-        return None
 
-    quarterly_afr: dict[str, int | dict[str, float]] = {
-        'deployed_drives': unique_serialnum_count,
-        'quarterly_afr': {},
-    }
-
+def _get_afr_calc_data(source_lazyframe: polars.LazyFrame, drive_model_raw_names: list[str]) -> polars.DataFrame:
     query_select_columns: list[str] = [
         "date",
         "model",
@@ -165,7 +150,35 @@ def _drive_model_afr_worker(drive_model_normalized: str,
             polars.col("failure").sum().alias("failure_count"),
         ]
     ).sort("date").collect()
-    print(f"\t\t\tGot aggregated daily AFR calc data from Polars with {len(afr_calc_data):,} records")
+    print(f"\t\t\tGot {len(afr_calc_data):,} days worth of aggregated daily AFR calc data from Polars for this model")
+    return afr_calc_data
+
+
+def _drive_model_afr_worker(drive_model_normalized: str,
+                            drive_model_raw_names: list[str],
+                            source_lazyframe: polars.LazyFrame,
+                            args: argparse.Namespace ) -> dict[str, int | dict[str, float]] | None:
+
+    print(f"\t\tWorker pool process starting on drive model {drive_model_normalized}...")
+    # print(f"\t\t\tDrive model names to query Polars datasource for: {json.dumps(drive_model_raw_names)}")
+
+    # Query unique serial numbers for these drive models
+    unique_serialnum_count: int = _get_unique_serial_nums_for_drive(source_lazyframe, drive_model_raw_names)
+    # print(f"\t\t\tUnique serial number count: {unique_serialnum_count}")
+
+    if unique_serialnum_count < args.min_drives:
+        print(f"\tINFO: culling model \"{drive_model_normalized}\" " 
+              f"(total deployed drive count of {unique_serialnum_count:,} < min of {args.min_drives:,}; "
+              "modify with --min-drives)")
+        return None
+
+    quarterly_afr: dict[str, int | dict[str, float]] = {
+        'deployed_drives': unique_serialnum_count,
+    }
+
+    data_for_afr_calc: polars.DataFrame = _get_afr_calc_data(source_lazyframe, drive_model_raw_names)
+
+    quarterly_afr['quarterly_afr'] = {}
 
     return quarterly_afr
 
