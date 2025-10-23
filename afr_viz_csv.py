@@ -173,20 +173,15 @@ def _get_afr_stats( args: argparse.Namespace,
                 args,
             )
         )
-        #afr_stats[curr_drive_model] = _drive_model_afr_worker(curr_drive_model, drive_model_mapping[curr_drive_model], original_source_lazyframe,
-                                #args)
-        #break
     
-    ctx = multiprocessing.get_context("spawn")
-
-    with ctx.Pool(processes=args.workers) as worker_pool:
-        try:
-            result_idx: int = 0
-            sorted_drive_models: list[str] = sorted(drive_model_mapping)
-            for afr_result in worker_pool.starmap(_drive_model_afr_worker, worker_args):
-                afr_stats[sorted_drive_models[result_idx]] = afr_result
-        except RuntimeError as e:
-            print(f"Caught exception in parent: {e}")
+    # Polars REALLY doesn't play well with default mp.Pool ("fork") type. 
+    # Set to "spawn" and we're back to good
+    with multiprocessing.get_context("spawn").Pool(processes=args.workers) as worker_pool:
+        result_idx: int = 0
+        sorted_drive_models: list[str] = sorted(drive_model_mapping)
+        for afr_result in worker_pool.starmap(_drive_model_afr_worker, worker_args):
+            afr_stats[sorted_drive_models[result_idx]] = afr_result
+            result_idx += 1 
 
     return afr_stats
 
@@ -200,5 +195,7 @@ def _main() -> None:
         original_source_lazyframe, drive_model_mapping )
     print( "\nDrive quarterly AFR data:\n" + json.dumps(drive_model_quarterly_afr_stats, indent=4, sort_keys=True) )
 
+
 if __name__ == "__main__":
     _main()
+
