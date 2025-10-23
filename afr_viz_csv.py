@@ -1,6 +1,5 @@
 import argparse
 import json
-import multiprocessing
 import polars
 import re
 import time
@@ -12,10 +11,7 @@ def _parse_args() -> argparse.Namespace:
 
     # Back off max CPU count as we have stats worker process pegging a CPU and then leave one for
     #   background/OS
-    worker_pool_size_default: int = multiprocessing.cpu_count() - 2
-    parser.add_argument('--workers', help=f"Size of worker pool, default: {worker_pool_size_default}",
-                        type=int, default=worker_pool_size_default)
-    parquet_max_batch_size_default: int = 64 * 1024
+    parquet_max_batch_size_default: int = 16 * 1024
     parser.add_argument('--max-batch', help="Max size of Polars record batch, " +
                                                          f"default: {parquet_max_batch_size_default:,}",
                         type=int, default=parquet_max_batch_size_default)
@@ -26,7 +22,7 @@ def _parse_args() -> argparse.Namespace:
                         type=int, default=default_min_drives)
 
     parser.add_argument('drive_patterns_json', help='Path to JSON with drive regexes')
-    parser.add_argument("parquet_file", help="Path to parquet file")
+    parser.add_argument("input_parquet_file", help="Path to parquet file we read from")
     return parser.parse_args()
 
 
@@ -111,25 +107,28 @@ def _get_drive_model_mapping(args: argparse.Namespace,
 
 
 def _source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
-    print(f"\nPolars datasource: local Parquet file, \"{args.parquet_file}\"")
-    source_lazyframe: polars.LazyFrame = polars.scan_parquet(args.parquet_file)
+    print(f"\nPolars datasource: local Parquet file, \"{args.input_parquet_file}\"")
+    source_lazyframe: polars.LazyFrame = polars.scan_parquet(args.input_parquet_file)
     return source_lazyframe
 
 
-def _get_unique_serial_nums_for_drive( source_lazyframe: polars.LazyFrame,
+def _get_unique_serial_nums_for_drive( args: argparse.Namespace,
+                                       source_lazyframe: polars.LazyFrame,
                                        drive_model_raw_names: list[str] ) -> int:
     unique_serial_count: int = 0
     # Query unique serial numbers for these drive models
     for batch_results_df in source_lazyframe.select("model", "serial_number").filter(
             polars.col("model").str.contains_any(drive_model_raw_names)
-        ).select("serial_number").unique("serial_number").collect_batches(chunk_size=16*1024):
+        ).select("serial_number").unique("serial_number").collect_batches(chunk_size=args.max_batch):
 
         unique_serial_count += len(batch_results_df)
 
     return unique_serial_count
 
 
-def _get_afr_calc_data(source_lazyframe: polars.LazyFrame, drive_model_raw_names: list[str]) -> polars.DataFrame:
+def _get_afr_calc_data(source_lazyframe: polars.LazyFrame, drive_model_normalized: str,
+                       drive_model_raw_names: list[str]) -> polars.DataFrame:
+
     query_select_columns: list[str] = [
         "date",
         "model",
@@ -150,20 +149,20 @@ def _get_afr_calc_data(source_lazyframe: polars.LazyFrame, drive_model_raw_names
             polars.col("failure").sum().alias("failure_count"),
         ]
     ).sort("date").collect()
-    print(f"\t\t\tGot {len(afr_calc_data):,} days worth of aggregated daily AFR calc data from Polars for this model")
+    print(f"\t\t\t{drive_model_normalized}: {len(afr_calc_data):6,} days of aggregated AFR calc data from Polars")
     return afr_calc_data
 
 
-def _drive_model_afr_worker(drive_model_normalized: str,
+def _get_afr_for_single_model(drive_model_normalized: str,
                             drive_model_raw_names: list[str],
                             source_lazyframe: polars.LazyFrame,
                             args: argparse.Namespace ) -> dict[str, int | dict[str, float]] | None:
 
-    print(f"\t\tWorker pool process starting on drive model {drive_model_normalized}...")
+    print(f"\t\tAFR calc starting on drive model {drive_model_normalized}...")
     # print(f"\t\t\tDrive model names to query Polars datasource for: {json.dumps(drive_model_raw_names)}")
 
     # Query unique serial numbers for these drive models
-    unique_serialnum_count: int = _get_unique_serial_nums_for_drive(source_lazyframe, drive_model_raw_names)
+    unique_serialnum_count: int = _get_unique_serial_nums_for_drive(args, source_lazyframe, drive_model_raw_names)
     # print(f"\t\t\tUnique serial number count: {unique_serialnum_count}")
 
     if unique_serialnum_count < args.min_drives:
@@ -176,7 +175,8 @@ def _drive_model_afr_worker(drive_model_normalized: str,
         'deployed_drives': unique_serialnum_count,
     }
 
-    data_for_afr_calc: polars.DataFrame = _get_afr_calc_data(source_lazyframe, drive_model_raw_names)
+    data_for_afr_calc: polars.DataFrame = _get_afr_calc_data(source_lazyframe, drive_model_normalized,
+                                                             drive_model_raw_names)
 
     quarterly_afr['quarterly_afr'] = {}
 
@@ -189,32 +189,17 @@ def _get_afr_stats( args: argparse.Namespace,
     afr_stats: dict[str, dict[str, float]] = {}
     print("\nGetting AFR stats...")
 
-    # Fire up a worker pool that each gets a drive model to pull data for and do its own independent AFR calc on
-    print(f"\tCreating worker pool of size {args.workers} (modify with --workers)")
-    worker_args: list[tuple[str, list[str], polars.LazyFrame, argparse.Namespace]] = []
+    operation_start: float = time.perf_counter()
     for curr_drive_model in sorted(drive_model_mapping):
-        worker_args.append(
-            (
-                curr_drive_model,
-                drive_model_mapping[curr_drive_model],
-                original_source_lazyframe,
-                args,
-            )
-        )
+        afr_result_for_drive: dict[str, int | dict[str, float]] | None = _get_afr_for_single_model( curr_drive_model,
+            drive_model_mapping[curr_drive_model], original_source_lazyframe, args )
 
-    # Polars REALLY doesn't play well with default mp.Pool ("fork") type. 
-    # Set to "spawn" and we're back to good
-    with multiprocessing.get_context("spawn").Pool(processes=args.workers) as worker_pool:
-        result_idx: int = 0
-        sorted_drive_models: list[str] = sorted(drive_model_mapping)
-        operation_start: float = time.perf_counter()
-        for afr_result in worker_pool.starmap(_drive_model_afr_worker, worker_args):
-            if afr_result is not None:
-                afr_stats[sorted_drive_models[result_idx] + f" ({afr_result['deployed_drives']:,})"] = \
-                    afr_result['quarterly_afr']
-            result_idx += 1
-        operation_duration: float = time.perf_counter() - operation_start
-        print(f"\tAFR calculations completed in {operation_duration:.03f} seconds")
+        if afr_result_for_drive is not None:
+            stats_key_with_deploy_count: str = f"{curr_drive_model} ({afr_result_for_drive['deployed_drives']:,})"
+            afr_stats[stats_key_with_deploy_count] = afr_result_for_drive['quarterly_afr']
+
+    operation_duration: float = time.perf_counter() - operation_start
+    print(f"\tAFR calculations completed in {operation_duration:.03f} seconds")
 
     return afr_stats
 
@@ -231,4 +216,3 @@ def _main() -> None:
 
 if __name__ == "__main__":
     _main()
-
