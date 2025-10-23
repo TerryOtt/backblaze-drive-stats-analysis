@@ -3,3 +3,4 @@
 .idea/
 *.parquet
 __pycache__/
+.venv/
