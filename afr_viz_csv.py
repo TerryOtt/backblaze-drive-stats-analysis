@@ -135,7 +135,7 @@ def _drive_model_afr_worker(drive_model_normalized: str,
     # print(f"\t\t\tUnique serial number count: {unique_serialnum_count}")
 
     if unique_serialnum_count < args.min_drives:
-        print(f"\tINFO: culling model \"{drive_model_normalized}\" "
+        print(f"\tINFO: culling model \"{drive_model_normalized}\" " 
               f"(total deployed drive count of {unique_serialnum_count:,} < min of {args.min_drives:,}; "
               "modify with --min-drives)")
         return None
@@ -145,22 +145,24 @@ def _drive_model_afr_worker(drive_model_normalized: str,
         'quarterly_afr': {},
     }
 
-    # query_select_columns: list[str] = [
-    #     "date",
-    #     "model",
-    #     "failure",
-    # ]
-    #
-    # post_filter_select_columns: list[str] = [
-    #     "date",
-    #     "failure",
-    # ]
-    #
-    # # Start with all columns so we can filter on model, but then filter out model
-    # for curr_rows_batch in source_lazyframe.select(query_select_columns).filter(
-    #         polars.col("model").str.contains_any(drive_model_raw_names)
-    #     ).select(post_filter_select_columns).sort("date").collect_batches(chunk_size=max_batch):
-    #     pass
+    query_select_columns: list[str] = [
+        "date",
+        "model",
+        "failure",
+    ]
+
+    post_filter_select_columns: list[str] = [
+        "date",
+        "failure",
+    ]
+
+    # Start with all columns so we can filter on model, but then filter out model
+    for curr_rows_batch in source_lazyframe.select(query_select_columns).filter(
+            polars.col("model").str.contains_any(drive_model_raw_names)
+        ).select(post_filter_select_columns).collect_batches(chunk_size=args.max_batch):
+        print(f"\t\t\tGot partial batch of AFR calc data from Polars with {len(curr_rows_batch)} records")
+
+        # TODO: can we group by date to use COUNT(failure) for drive_days on date and SUM(failure) for fail count?
 
     return quarterly_afr
 
