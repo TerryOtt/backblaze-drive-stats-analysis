@@ -1,8 +1,14 @@
 import argparse
+import datetime
 import json
 import multiprocessing
-import pandas
-import pyarrow.parquet
+import os
+
+# Doing this as we are already multi-CPU, limit each worker process to one Polars thread
+#   NOTE: env var *has* to be set before Polars is imported
+os.environ['POLARS_MAX_THREADS'] = "1"
+import polars
+
 import re
 import time
 
@@ -19,30 +25,6 @@ import time
 #
 #       Literally saving 150 GB of RAM by find/replace drop in replace from Queue to SimpleQueue
 
-
-# TO DO: investigate polars for lazy reading parquet instead of pyarrow and pandas
-#
-# import polars
-# polars_lazy_df = polars.scan_parquet("file.parquet")
-#
-# https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html
-#
-# Chain operations on lazy frame to update query plan that will be run
-#
-# selected_columns = [
-#             'model',
-#             'date',
-#             'serial_number',
-#             'failure',
-# ]
-# optimized_lazy_frame = polars.scan_parquet("file.parquet").select(select_columns)
-#
-# Now iterate over batches
-# for polars_materialized_df in optimized_lazy_frame.fetch_batches(batch_size=1024):
-#       # materialized_df is the first one that actually has data in it, work was delayed as long as possible
-#       print(f"Number of records in this data frame: {len(polars_materialized_df):,}")
-#
-#       # Now send that Polars dataframe over the queue to a worker
 
 # Define this once, not every time we need a date lookup
 _month_quarter_map: dict[str, str] = {
@@ -76,7 +58,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument('--max-batch', help="Max size of Parquet record batch, " +
                                                          f"default: {parquet_max_batch_size_default:,}",
                         type=int, default=parquet_max_batch_size_default)
-    default_min_drives: int = 1000
+    default_min_drives: int = 2_000
     parser.add_argument('--min-drives', help="Minimum number of deployed drives for model, default: " +
                         f"{default_min_drives:,}",
                         type=int, default=default_min_drives)
@@ -91,8 +73,65 @@ def _convert_date_to_year_quarter(drive_entry_date: str) -> str:
     return month_quarter
 
 
-def _parquet_batch_worker(processing_batch_queue: multiprocessing.SimpleQueue,
-                          daily_drive_health_report_queue: multiprocessing.SimpleQueue,
+def _process_materialized_dataframe( daily_drive_health_report_queue: multiprocessing.Queue,
+                                     models_with_stats: set[str],
+                                     models_seen: set[str],
+                                     drive_model_regexes: list[str],
+                                     polars_dataframe_materialized: polars.DataFrame ) -> None:
+
+    multi_stats_msg: list[dict[str, str | bool]] = []
+
+    for data_record in polars_dataframe_materialized.iter_rows(named=True):
+        # print("Got valid row data record from deserialized dataframe")
+
+        # Is this the first time this worker has seen this drive model string?
+        if data_record['model'] not in models_seen:
+
+            # Mark that we've seen it
+            models_seen.add(data_record['model'])
+
+            # Scan regexes to see if we should track stats on it
+            for curr_regex in drive_model_regexes:
+
+                # If we find a match, add it to set of models we're tracking and stop looking further
+                if re.search(curr_regex, data_record['model']):
+                    models_with_stats.add(data_record['model'])
+                    break
+
+        # Check if we are tracking stats on it
+        if data_record['model'] not in models_with_stats:
+            # Ignore it
+            continue
+
+        # Turn the date into a year/quarter combo
+        year_quarter: str = _convert_date_to_year_quarter(data_record['date'].isoformat())
+
+        afr_stats_msg: dict[str, str | bool] = {
+            'model': data_record['model'],
+            'serial_number': data_record['serial_number'],
+            'year_quarter': year_quarter,
+        }
+        if data_record['failure'] == 1:
+            afr_stats_msg['failure'] = True
+        else:
+            # Don't even include the key if there was no failure
+            # afr_stats_msg['failure'] = False
+            pass
+
+        # Append this stats message into the queue stats container
+        multi_stats_msg.append(afr_stats_msg)
+
+
+    del polars_dataframe_materialized
+
+    # Ship a whole record batch worth of data in one queue msg to stats processor
+    daily_drive_health_report_queue.put(multi_stats_msg)
+
+    del multi_stats_msg
+
+
+def _parquet_batch_worker(processing_batch_queue: multiprocessing.Queue,
+                          daily_drive_health_report_queue: multiprocessing.Queue,
                           args: argparse.Namespace) -> None:
 
     # Read the regexes for drive models  we care about
@@ -102,68 +141,57 @@ def _parquet_batch_worker(processing_batch_queue: multiprocessing.SimpleQueue,
     models_with_stats: set[str] = set()
     models_seen: set[str] = set()
 
-    while True:
-        queue_contents: pyarrow.RecordBatch | None = processing_batch_queue.get()
+    parquet_columns: list[str] = [
+        'model',
+        'date',
+        'serial_number',
+        'failure',
+    ]
 
-        if queue_contents is None:
+    parquet_lazyframe: polars.LazyFrame = polars.scan_parquet(args.input_parquet).select(
+        parquet_columns )
+
+    while True:
+        queue_msg: dict[str, int] | None = processing_batch_queue.get()
+
+        if queue_msg is None:
             #print("Parquet batch worker got a poison pill, no more work")
             break
 
-        #print( f"Worker got record batch with {queue_contents.num_rows} rows")
-        pandas_df: pandas.DataFrame = queue_contents.to_pandas()
+        # We got a date range to ourselves to work
+        print( f"\t\tWorker starting on records for {queue_msg['year']}-{queue_msg['month']:02d}")
 
-        # How many records in this dataframe?
-        num_records_in_batch: int = len(pandas_df)
+        # Now apply the year and month filter, then collect those batches
+        filtered_lazyframe: polars.LazyFrame = parquet_lazyframe.filter(
+            (polars.col("date").dt.year() == queue_msg['year']) &
+            (polars.col("date").dt.month() == queue_msg['month']) )
 
-        multi_stats_msg: list[dict[str, str | bool]] = []
+        del queue_msg
 
-        for record_index, data_record in enumerate(pandas_df.itertuples(index=False)):
-            # print("Got valid row data record from deserialized dataframe")
+        for polars_materialized_dataframe in filtered_lazyframe.collect_batches(chunk_size=args.max_batch):
+            # print(f"\tWorker got materialized dataframe with {len(polars_materialized_dataframe)} rows")
+            _process_materialized_dataframe(daily_drive_health_report_queue,
+                                            models_with_stats,
+                                            models_seen,
+                                            drive_model_regexes,
+                                            polars_materialized_dataframe)
 
-            # Is this the first time this worker has seen this drive model string?
-            if data_record.model not in models_seen:
+            del polars_materialized_dataframe
 
-                # Mark that we've seen it
-                models_seen.add(data_record.model)
-
-                # Scan regexes to see if we should track stats on it
-                for curr_regex in drive_model_regexes:
-
-                    # If we find a match, add it to set of models we're tracking and stop looking further
-                    if re.search(curr_regex, data_record.model):
-                        models_with_stats.add(data_record.model)
-                        break
-
-            # Check if we are tracking stats on it
-            if data_record.model not in models_with_stats:
-                # Ignore it
-                continue
-
-            # Turn the date into a year/quarter combo
-            year_quarter: str = _convert_date_to_year_quarter(data_record.date.isoformat())
-
-            afr_stats_msg: dict[str, str | bool] = {
-                'model'         : data_record.model,
-                'serial_number' : data_record.serial_number,
-                'year_quarter'  : year_quarter,
-            }
-            if data_record.failure == 1:
-                afr_stats_msg['failure'] = True
-            else:
-                # Don't even include the key if there was no failure
-                #afr_stats_msg['failure'] = False
-                pass
-
-            # Append this stats message into the queue stats container
-            multi_stats_msg.append(afr_stats_msg)
-
-        # Ship a whole record batch worth of data in one queue msg to stats processor
-        daily_drive_health_report_queue.put(multi_stats_msg)
+    # Drop memory asap
+    del drive_model_regexes
+    del models_with_stats
+    del models_seen  
 
     # Need to send poison pill to stats worker to help it know when all work is done
     daily_drive_health_report_queue.put(None)
 
-    # print("\tParquet reader worker terminating cleanly")
+    # Mark that this process will not be writing to the queue anymore
+    daily_drive_health_report_queue.close()
+
+    del daily_drive_health_report_queue
+
+    print("\tParquet reader worker terminating cleanly")
 
 
 def _normalize_drive_model_name(raw_drive_model: str) -> str:
@@ -244,8 +272,8 @@ def _cull_drive_models(args: argparse.Namespace,
         del drive_quarterly_afr_calc_data[drive_model_to_cull]
 
 
-def _afr_stats_worker(daily_drive_health_report_queue: multiprocessing.SimpleQueue,
-                      drive_afr_data_queue: multiprocessing.SimpleQueue,
+def _afr_stats_worker(daily_drive_health_report_queue: multiprocessing.Queue,
+                      drive_afr_data_queue: multiprocessing.Queue,
                       args: argparse.Namespace) -> None:
 
     poison_pills_received: int = 0
@@ -271,8 +299,13 @@ def _afr_stats_worker(daily_drive_health_report_queue: multiprocessing.SimpleQue
             # Otherwise read next queue message
             continue
 
+
+        num_stats_entry_in_queue_msg: int = len(queue_contents)
+
+
         # If we get here, we have a valid stats message, so process all the records in it
-        for curr_health_record in queue_contents:
+        while queue_contents:
+            curr_health_record: dict[str, str | int] = queue_contents.pop() 
             if curr_health_record['model'] in known_drive_model_norm_mappings:
                 normalized_drive_model_name: str = known_drive_model_norm_mappings[curr_health_record['model']]
             elif curr_health_record['model'] not in drive_models_seen:
@@ -314,12 +347,23 @@ def _afr_stats_worker(daily_drive_health_report_queue: multiprocessing.SimpleQue
             if curr_health_record['serial_number'] not in drive_serial_nums_per_model[normalized_drive_model_name]:
                 drive_serial_nums_per_model[normalized_drive_model_name].add(curr_health_record['serial_number'])
 
-        num_stats_entry_in_queue_msg: int = len(queue_contents)
+
+            del curr_health_record
+
+        del queue_contents
+
         data_records_received += num_stats_entry_in_queue_msg
+
+
+    del drive_models_seen
+    del known_drive_model_norm_mappings
 
     processing_end_time: float = time.perf_counter()
     running_time: int = int(processing_end_time - processing_start_time)
-    records_per_second: int = data_records_received // running_time
+    if running_time > 0:
+        records_per_second: int = data_records_received // running_time
+    else:
+        records_per_second: int = 0
 
     # Cull any drive models without enough deployed drives
     _cull_drive_models(args, drive_quarterly_afr_calc_data, drive_serial_nums_per_model)
@@ -329,6 +373,12 @@ def _afr_stats_worker(daily_drive_health_report_queue: multiprocessing.SimpleQue
 
     # Send our data with inputs for AFR calcs back to parent
     drive_afr_data_queue.put(drive_quarterly_afr_calc_data)
+    del drive_quarterly_afr_calc_data
+    drive_afr_data_queue.close()
+    del drive_afr_data_queue
+
+    del drive_serial_nums_per_model
+
 
     print("\tAFR stats worker: processing complete")
     print(f"\tAFR stats worker: processed {data_records_received:11,} drive health records " +
@@ -350,8 +400,8 @@ def _get_afr_calc_input_data(args: argparse.Namespace) -> dict[str, dict[str, di
     print("\nStarting Parquet data reads...")
 
     # Set up multiprocessing
-    processing_batch_queue: multiprocessing.SimpleQueue = multiprocessing.SimpleQueue()
-    daily_drive_health_report_queue: multiprocessing.SimpleQueue = multiprocessing.SimpleQueue()
+    processing_batch_queue: multiprocessing.Queue = multiprocessing.Queue()
+    daily_drive_health_report_queue: multiprocessing.Queue = multiprocessing.Queue(maxsize=1024*128)
     drive_afr_data_queue: multiprocessing.SimpleQueue = multiprocessing.SimpleQueue()
     child_processes: list[multiprocessing.Process] = []
 
@@ -371,25 +421,41 @@ def _get_afr_calc_input_data(args: argparse.Namespace) -> dict[str, dict[str, di
     worker_handle.start()
     child_processes.append(worker_handle)
 
-    with pyarrow.parquet.ParquetFile(args.input_parquet) as parquet_handle:
-        #print(parquet_handle.schema)
-        columns: list[str] = [
-            'model',
-            'date',
-            'serial_number',
-            'failure',
-        ]
+    # print("Parquet schema:\n")
+    # print(polars.read_parquet_schema(args.input_parquet))
 
-        print(f"\tParent: using Parquet max batch size of {args.max_batch:,} records (modify with --max-batch)")
-        for curr_batch in parquet_handle.iter_batches(batch_size=args.max_batch, columns=columns):
-            processing_batch_queue.put(curr_batch)
+    print(f"\tParquet reader workers using max chunk setting of {args.max_batch} (modify with --max-batch)")
+    print("\tPolars thread pool size (should be set to 1, that gives one CPU per worker process): " +
+          f"{polars.thread_pool_size()}")
 
-        print("\tParent: all work has been sent to Parquet reader workers")
+    # Create year/month combos and send those to workers
+    start_year: int = 2013
+    current_year: int = datetime.datetime.now().year
+    current_month: int = datetime.datetime.now().month
+
+    # Iterate backwards over years to get the biggest chunks of work up front
+    for scan_year in range(current_year, start_year - 1, -1):
+        for scan_month in range(12, 0, -1):
+
+            # Ignore any future months
+            if scan_year == current_year and scan_month > current_month:
+                continue
+
+            queue_msg: dict[str, int] = {
+                'year': scan_year,
+                'month': scan_month
+            }
+            processing_batch_queue.put(queue_msg)
+
+    print("\tParent: all work has been divvied up across Parquet reader workers")
 
     # Poison pill the batch worker pool, one per worker
     for _ in range(args.workers):
         processing_batch_queue.put(None)
     #print("All poison pills sent to batch workers")
+
+    processing_batch_queue.close()
+    del processing_batch_queue
 
     # Note: when batch workers are done, they poison pill stats worker
     # so that stats worker knows when it's time to come home
@@ -441,7 +507,7 @@ def _main() -> None:
     # Drop our reference to AFR calc input data as it's no longer needed
     del afr_calc_input_data
 
-    print(json.dumps(computed_drive_quarterly_afr, indent=4, sort_keys=True))
+    #print(json.dumps(computed_drive_quarterly_afr, indent=4, sort_keys=True))
 
 
 if __name__ == "__main__":
