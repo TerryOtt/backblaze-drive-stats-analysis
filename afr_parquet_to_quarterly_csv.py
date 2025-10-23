@@ -14,17 +14,15 @@ import time
 
 
 # Right mix for runtime
-#  - c8g.2xlarge (8 CPU, 16 GB RAM)
-#  - run with default workers and parquet max batch size
-#  - load 8.5 on 8 CPU machine
-#  - consumes 5.0 GB of the 16 GB RAM (~31%)
-#  - Finishes in 130 seconds (2 mins, 10 seconds)
-#  - *Massive* RAM savings now that I switched from
-#       multiprocessing.Queue (no max size) to
-#       multiprocessing.SimpleQueue.
-#
-#       Literally saving 150 GB of RAM by find/replace drop in replace from Queue to SimpleQueue
+#  - r8g.8xlarge (32 CPU, 256 GB RAM)
+#  - run with --workers 30 and --max-batch 5000
+#  - consumes 150 GB of RAM
+#  - long pole is the 5 min 30 seconds single-threaded stats processor
+#       - Shard by drive model?
+#       - Each process to manage stats for a given model writes its dict to a queue when done
+#       - Parent stats collector then takes the list of dicts, unifies them in one dict, returns to parent process
 
+#  - oooor we use the Go polars bindings and write it in Go which makes more sense to me
 
 # Define this once, not every time we need a date lookup
 _month_quarter_map: dict[str, str] = {
