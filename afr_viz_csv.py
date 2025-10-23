@@ -1,5 +1,6 @@
 import argparse
 import json
+import multiprocessing
 import polars
 import re
 import time
@@ -8,6 +9,18 @@ import time
 def _parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser: argparse.ArgumentParser = argparse.ArgumentParser(description="Create quarterly AFR visualization CSV")
+
+    # Back off max CPU count as we have stats worker process pegging a CPU and then leave one for
+    #   background/OS
+    worker_pool_size_default: int = multiprocessing.cpu_count() - 2
+    parser.add_argument('--workers', help=f"Size of worker pool, default: {worker_pool_size_default}",
+                        type=int, default=worker_pool_size_default)
+
+    default_min_drives: int = 2_000
+    parser.add_argument('--min-drives', help="Minimum number of deployed drives for model, default: " +
+                        f"{default_min_drives:,}",
+                        type=int, default=default_min_drives)
+
     parser.add_argument('drive_patterns_json', help='Path to JSON with drive regexes')
     parser.add_argument("parquet_file", help="Path to parquet file")
     return parser.parse_args()
@@ -98,10 +111,38 @@ def _source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
     source_lazyframe: polars.LazyFrame = polars.scan_parquet(args.parquet_file)
     return source_lazyframe
 
-def _get_afr_stats( original_source_lazyframe: polars.LazyFrame,
+
+def _drive_model_afr_worker(drive_model_normalized: str,
+                            drive_model_raw_names: list[str],
+                            original_source_lazyframe: polars.LazyFrame) -> dict[str, float]:
+    quarterly_afr: dict[str, float] = {}
+    print(f"\t\tWorker pool process starting on drive model {drive_model_normalized}")
+
+    return quarterly_afr
+
+
+def _get_afr_stats( args: argparse.Namespace,
+                    original_source_lazyframe: polars.LazyFrame,
                     drive_model_mapping: dict[str, list[str]] ) -> dict[str, dict[str, float]]:
     afr_stats: dict[str, dict[str, float]] = {}
     print("\nGetting AFR stats...")
+
+    # Fire up a worker pool that each gets a drive model to pull data for and do its own independent AFR calc on
+    print(f"\tCreating worker pool of size {args.workers} (modify with --workers)")
+    worker_args: list[tuple[str, list[str], polars.LazyFrame]] = []
+    for curr_drive_model in sorted(drive_model_mapping):
+        worker_args.append((curr_drive_model, drive_model_mapping[curr_drive_model], original_source_lazyframe))
+
+    with multiprocessing.Pool(processes=args.workers) as worker_pool:
+        afr_results: list[dict[str, float]] = worker_pool.starmap(_drive_model_afr_worker, worker_args)
+
+        for curr_drive_model in sorted(drive_model_mapping):
+            # Results from starmap are in the same order of the parameters passed in, so pull head of list
+            afr_stats[curr_drive_model] = afr_results.pop(0)
+
+        # Make sure we consumed all results from starmap and the list is empty
+        assert not afr_results
+        del afr_results
 
     return afr_stats
 
@@ -111,7 +152,7 @@ def _main() -> None:
     original_source_lazyframe: polars.LazyFrame = _source_lazyframe(args)
     drive_model_mapping: dict[str, list[str]] = _get_drive_model_mapping(args, original_source_lazyframe)
     #print(json.dumps(drive_model_mapping, indent=4, sort_keys=True))
-    drive_model_quarterly_afr_stats: dict[str, dict[str, float]] = _get_afr_stats(
+    drive_model_quarterly_afr_stats: dict[str, dict[str, float]] = _get_afr_stats( args,
         original_source_lazyframe, drive_model_mapping )
 
 
