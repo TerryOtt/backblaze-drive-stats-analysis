@@ -119,8 +119,8 @@ def _source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
 def _drive_model_afr_worker(drive_model_normalized: str,
                             drive_model_raw_names: list[str],
                             source_lazyframe: polars.LazyFrame,
-                            args: argparse.Namespace ) -> dict[str, float]:
-    quarterly_afr: dict[str, float] = {}
+                            args: argparse.Namespace ) -> dict[str, int | dict[str, float]] | None:
+
     print(f"\t\tWorker pool process starting on drive model {drive_model_normalized}...")
     # print(f"\t\t\tDrive model names to query Polars datasource for: {json.dumps(drive_model_raw_names)}")
 
@@ -132,8 +132,17 @@ def _drive_model_afr_worker(drive_model_normalized: str,
 
         unique_serialnum_count += len(curr_row_batch)
 
-    print(f"\t\t\tUnique serial number count: {unique_serialnum_count}")
+    # print(f"\t\t\tUnique serial number count: {unique_serialnum_count}")
 
+    if unique_serialnum_count < args.min_drives:
+        print(f"\tINFO: culling data for drive model {drive_model_normalized} "
+              f"(drive count {unique_serialnum_count} < min of {args.min_drives}, modify with --min-drives)")
+        return None
+
+    quarterly_afr: dict[str, int | dict[str, float]] = {
+        'deployed_drives': unique_serialnum_count,
+        'quarterly_afr': {},
+    }
 
     # query_select_columns: list[str] = [
     #     "date",
@@ -173,15 +182,20 @@ def _get_afr_stats( args: argparse.Namespace,
                 args,
             )
         )
-    
+
     # Polars REALLY doesn't play well with default mp.Pool ("fork") type. 
     # Set to "spawn" and we're back to good
     with multiprocessing.get_context("spawn").Pool(processes=args.workers) as worker_pool:
         result_idx: int = 0
         sorted_drive_models: list[str] = sorted(drive_model_mapping)
+        operation_start: float = time.perf_counter()
         for afr_result in worker_pool.starmap(_drive_model_afr_worker, worker_args):
-            afr_stats[sorted_drive_models[result_idx]] = afr_result
-            result_idx += 1 
+            if afr_result is not None:
+                afr_stats[sorted_drive_models[result_idx] + f" ({afr_result['deployed_drives']:,})"] = \
+                    afr_result['quarterly_afr']
+            result_idx += 1
+        operation_duration: float = time.perf_counter() - operation_start
+        print(f"\tAFR calculations completed in {operation_duration:.03f} seconds")
 
     return afr_stats
 
