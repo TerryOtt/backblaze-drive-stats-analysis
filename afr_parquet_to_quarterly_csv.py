@@ -17,12 +17,10 @@ import time
 #  - r8g.8xlarge (32 CPU, 256 GB RAM)
 #  - run with --workers 30 and --max-batch 5000
 #  - consumes 150 GB of RAM
-#  - long pole is the 5 min 30 seconds single-threaded stats processor
-#       - Shard by drive model?
-#       - Each process to manage stats for a given model writes its dict to a queue when done
-#       - Parent stats collector then takes the list of dicts, unifies them in one dict, returns to parent process
+#  - long pole is system stopping the world to reclaim memory when reader workers all try to close
 
-#  - oooor we use the Go polars bindings and write it in Go which makes more sense to me
+#  - If we want faster than five minutes, check out Go polars bindings and write it over in Go which makes more sense to me
+
 
 # Define this once, not every time we need a date lookup
 _month_quarter_map: dict[str, str] = {
@@ -52,9 +50,9 @@ def _parse_args() -> argparse.Namespace:
     worker_pool_size_default: int = multiprocessing.cpu_count() - 2
     parser.add_argument('--workers', help=f"Size of worker pool, default: {worker_pool_size_default}",
                         type=int, default=worker_pool_size_default)
-    parquet_max_batch_size_default: int = 1024 * 128
+    parquet_max_batch_size_default: int = 150
     parser.add_argument('--max-batch', help="Max size of Parquet record batch, " +
-                                                         f"default: {parquet_max_batch_size_default:,}",
+                                                         f"default: {parquet_max_batch_size_default:,}, ~8GB RAM",
                         type=int, default=parquet_max_batch_size_default)
     default_min_drives: int = 2_000
     parser.add_argument('--min-drives', help="Minimum number of deployed drives for model, default: " +
@@ -157,7 +155,7 @@ def _parquet_batch_worker(processing_batch_queue: multiprocessing.Queue,
             break
 
         # We got a date range to ourselves to work
-        print( f"\t\tWorker starting on records for {queue_msg['year']}-{queue_msg['month']:02d}")
+        #print( f"\t\tWorker starting on records for {queue_msg['year']}-{queue_msg['month']:02d}")
 
         # Now apply the year and month filter, then collect those batches
         filtered_lazyframe: polars.LazyFrame = parquet_lazyframe.filter(
@@ -189,7 +187,7 @@ def _parquet_batch_worker(processing_batch_queue: multiprocessing.Queue,
 
     del daily_drive_health_report_queue
 
-    print("\tParquet reader worker terminating cleanly")
+    #print("\tParquet reader worker terminating cleanly")
 
 
 def _normalize_drive_model_name(raw_drive_model: str) -> str:
@@ -251,7 +249,7 @@ def _add_drive_deploy_counts_to_model_names(drive_quarterly_afr_calc_data: dict[
         # Remove data under old key, add under new key
         drive_quarterly_afr_calc_data[new_name] = drive_quarterly_afr_calc_data.pop(curr_old_name)
 
-    print("\tAdded drive deployment counts to model names")
+    #print("\tAFR stats worker: drive deployment counts added to model names")
 
 
 def _cull_drive_models(args: argparse.Namespace,
@@ -276,7 +274,7 @@ def _afr_stats_worker(daily_drive_health_report_queue: multiprocessing.Queue,
 
     poison_pills_received: int = 0
     data_records_received: int = 0
-    print( "\tAFR stats worker: successfully started" )
+    #print( "\tAFR stats worker: successfully started" )
     processing_start_time: float = time.perf_counter()
     drive_quarterly_afr_calc_data: dict[str, dict[str, dict[str, int]]] = {}
 
@@ -297,13 +295,13 @@ def _afr_stats_worker(daily_drive_health_report_queue: multiprocessing.Queue,
             # Otherwise read next queue message
             continue
 
-
         num_stats_entry_in_queue_msg: int = len(queue_contents)
-
 
         # If we get here, we have a valid stats message, so process all the records in it
         while queue_contents:
+            # Remove entries from queue message so we can free memory sooner
             curr_health_record: dict[str, str | int] = queue_contents.pop() 
+
             if curr_health_record['model'] in known_drive_model_norm_mappings:
                 normalized_drive_model_name: str = known_drive_model_norm_mappings[curr_health_record['model']]
             elif curr_health_record['model'] not in drive_models_seen:
@@ -345,13 +343,13 @@ def _afr_stats_worker(daily_drive_health_report_queue: multiprocessing.Queue,
             if curr_health_record['serial_number'] not in drive_serial_nums_per_model[normalized_drive_model_name]:
                 drive_serial_nums_per_model[normalized_drive_model_name].add(curr_health_record['serial_number'])
 
-
             del curr_health_record
 
         del queue_contents
 
         data_records_received += num_stats_entry_in_queue_msg
 
+    print("\tAFR stats worker: done reading from records queue, moving onto final stats processing" )
 
     del drive_models_seen
     del known_drive_model_norm_mappings
@@ -418,6 +416,7 @@ def _get_afr_calc_input_data(args: argparse.Namespace) -> dict[str, dict[str, di
                                             args=(daily_drive_health_report_queue, drive_afr_data_queue, args) )
     worker_handle.start()
     child_processes.append(worker_handle)
+    print( "\tParent: launched AFR stats worker process" )
 
     # print("Parquet schema:\n")
     # print(polars.read_parquet_schema(args.input_parquet))
