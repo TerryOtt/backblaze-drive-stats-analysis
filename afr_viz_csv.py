@@ -145,7 +145,7 @@ def _get_deploy_counts_with_min_drive_count_filter(args: argparse.Namespace,
     print( f"\t\tRetrieved drive deploy counts for {len(drive_model_deploy_count_dataframe):,} candidate drive models "
            f"in {operation_duration:.01f} seconds\n")
 
-    print(drive_model_deploy_count_dataframe)
+    #print(drive_model_deploy_count_dataframe)
 
     # How many candidate normalized drive model names did we start with?
     candidate_drive_models_count: int = smart_model_name_mappings_dataframe.get_column(
@@ -296,7 +296,8 @@ def _get_smart_drive_model_mappings(smart_drive_model_names_series: polars.Serie
     normalized_drive_model_name_count: int = smart_drive_model_mappings_df.get_column(
         "drive_model_name_normalized" ).unique().len()
 
-    print(f"\tFound {normalized_drive_model_name_count} normalized drive model names")
+    print(f"\tCreated {normalized_drive_model_name_count} normalized drive model names from "
+          f"{smart_drive_model_names_series.len()} SMART drive model names")
 
     return smart_drive_model_mappings_df
 
@@ -338,6 +339,14 @@ def _main() -> None:
     #print(json.dumps(drive_model_mapping, indent=4, sort_keys=True))
     drive_deploy_count_df: polars.DataFrame = _get_deploy_counts_with_min_drive_count_filter(
         args, original_source_lazyframe, smart_model_name_mappings_dataframe )
+
+    # Remove all rows from name mappings dataframe that got filtered out due to being below min drive counts
+    smart_model_name_mappings_dataframe: polars.DataFrame = smart_model_name_mappings_dataframe.join(
+        drive_deploy_count_df, on="drive_model_name_normalized" ).select( "drive_model_name_normalized",
+        "drive_model_name_smart").sort( "drive_model_name_normalized", "drive_model_name_smart")
+
+    print(smart_model_name_mappings_dataframe)
+
     drive_model_quarterly_afr_stats: dict[str, dict[str, float]] = _get_afr_stats( args,
         original_source_lazyframe, smart_model_name_mappings_dataframe )
     # print( "\nDrive quarterly AFR data:\n" + json.dumps(drive_model_quarterly_afr_stats, indent=4, sort_keys=True) )
