@@ -37,11 +37,11 @@ def _normalize_drive_model_name(raw_drive_model: str) -> str:
 
     models_to_mfrs: dict[str, str] = {
         r'ST\d+'    : 'Seagate',
-        r'WU[HS]72' : 'WDC',
+        r'WU[HS]72' : 'WDC/HGST',
     }
 
     expected_mfr_strings: set[str] = {
-        'HGST',
+        'WDC/HGST',
         'Seagate',
         'Toshiba',
         'WDC',
@@ -58,53 +58,21 @@ def _normalize_drive_model_name(raw_drive_model: str) -> str:
 
     # Two token cases
 
-    # Do sane casing on Toshiba
-    if model_tokens[0].upper() == "TOSHIBA":
-        normalized_drive_model_name: str = f"Toshiba {model_tokens[1]}"
-    else:
-        if model_tokens[0] not in expected_mfr_strings:
-            raise ValueError(f"Drive mfr {model_tokens[0]} not recognized")
+    # Do some mfr name mappings
+    name_mappings: dict[str, str] = {
+        "TOSHIBA"   : "Toshiba",
+        "HGST"      : "WDC/HGST",
+        "WDC"       : "WDC/HGST",
+    }
+    if model_tokens[0] in name_mappings:
+        model_tokens[0] = name_mappings[model_tokens[0]]
 
-        normalized_drive_model_name: str = " ".join(model_tokens)
+    if model_tokens[0] not in expected_mfr_strings:
+        raise ValueError(f"Drive mfr {model_tokens[0]} not recognized")
+
+    normalized_drive_model_name: str = " ".join(model_tokens)
 
     return normalized_drive_model_name
-
-
-def _get_drive_model_mapping(args: argparse.Namespace,
-                             original_source_lazyframe: polars.LazyFrame) -> dict[str, list[str]]:
-
-    print("\nETL pipeline stage 1 / 5: Retrieve candidate drive model names...")
-
-    drive_model_mapping: dict[str, list[str]] = {}
-
-    with open(args.drive_patterns_json, "r") as json_handle:
-        drive_model_patterns: list[str] = json.load(json_handle)
-    print(f"\tRetrieved {len(drive_model_patterns):,} drive model regexes from \"{args.drive_patterns_json}\"")
-
-    multi_regex_pattern: str = "|".join(drive_model_patterns)
-    # print(f"multi regex pattern: {multi_regex_pattern}")
-
-    # We want all unique drive model names found in the source file which match one of the drive model regexes
-    operation_start: float = time.perf_counter()
-    print("\tRetrieving unique candidate drive model names from Polars...")
-    drive_models: polars.Series = original_source_lazyframe.select("model").unique().filter(
-        polars.col("model").str.contains(multi_regex_pattern)
-    ).sort("model").collect().to_series()
-    operation_end: float = time.perf_counter()
-    operation_duration: float = operation_end - operation_start
-
-    # How many unique drive models and how much time?
-    print( f"\t\tRetrieved {len(drive_models):,} candidate drive model names in {operation_duration:.01f} seconds")
-
-    # Iterate over drive models to create normalized name -> [raw name from source, ...] mappings
-    for current_drive_model in drive_models:
-        #print(f"Found drive model \"{current_drive_model}\"")
-        normalized_drive_model_name: str = _normalize_drive_model_name(current_drive_model)
-        if normalized_drive_model_name not in drive_model_mapping:
-            drive_model_mapping[normalized_drive_model_name]: list[str] = []
-        drive_model_mapping[normalized_drive_model_name].append(current_drive_model)
-
-    return drive_model_mapping
 
 
 def _source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
@@ -140,75 +108,61 @@ def _get_afr_calc_data(source_lazyframe: polars.LazyFrame, drive_model_normalize
     return afr_calc_data
 
 
-def _get_deploy_counts_per_raw_model_string(original_source_lazyframe: polars.LazyFrame,
-                                            full_raw_model_list: list[str] ) -> polars.DataFrame:
+def _get_deploy_counts_with_min_drive_count_filter(args: argparse.Namespace,
+                                                   original_source_lazyframe: polars.LazyFrame,
+                                                   smart_model_name_mappings_dataframe: polars.DataFrame
+    ) -> polars.DataFrame:
 
-    print("\tRetrieving deploy counts from Polars for candidate drive models...")
+    print("\nETL pipeline stage 3 / 6: Retrieve deploy counts for drive models...")
+
+    print("\tRetrieving drive deployment counts from Polars...")
     operation_start: float = time.perf_counter()
-    raw_model_deploy_count_dataframe: polars.DataFrame = original_source_lazyframe.select(
-        "model", "serial_number" ).filter(
-        polars.col("model").str.contains_any(full_raw_model_list)
-    ).unique().group_by("model").agg(
-        [
-            polars.col("serial_number").count().alias("drives_deployed"),
-        ]
-    ).sort("model").collect()
+
+    # Oh my SQL of death
+    drive_model_deploy_count_dataframe: polars.DataFrame = original_source_lazyframe.select(
+        "model", "serial_number" ).unique().filter(
+            polars.col("model").is_in(
+                smart_model_name_mappings_dataframe.get_column("drive_model_name_smart").to_list()
+            )
+        ).join(smart_model_name_mappings_dataframe.lazy(),
+               left_on="model",
+               right_on="drive_model_name_smart"
+        ).select(
+            "drive_model_name_normalized", "serial_number"
+        ).group_by(
+            "drive_model_name_normalized"
+        ).agg(
+            [
+                polars.col("serial_number").count().alias("drives_deployed"),
+            ]
+        ).select(
+            "drive_model_name_normalized", "drives_deployed"
+        ).filter(
+          polars.col("drives_deployed").ge(args.min_drives)
+        ).sort("drive_model_name_normalized").collect()
+
     operation_duration: float = time.perf_counter() - operation_start
-    print( f"\t\tRetrieved drive deploy counts for {len(raw_model_deploy_count_dataframe):,} candidate drive models "
+    print( f"\t\tRetrieved drive deploy counts for {len(drive_model_deploy_count_dataframe):,} candidate drive models "
            f"in {operation_duration:.01f} seconds\n")
 
-    return raw_model_deploy_count_dataframe
+    print(drive_model_deploy_count_dataframe)
 
+    # How many candidate normalized drive model names did we start with?
+    candidate_drive_models_count: int = smart_model_name_mappings_dataframe.get_column(
+        "drive_model_name_normalized").unique().len()
 
-def _exclude_insufficient_deploy_counts(args: argparse.Namespace,
-                                        original_source_lazyframe: polars.LazyFrame,
-                                        drive_model_mapping: dict[str, list[str]] ) -> None:
+    if len(drive_model_deploy_count_dataframe) < candidate_drive_models_count:
+        print(f"\tINFO: {candidate_drive_models_count - len(drive_model_deploy_count_dataframe):,} candidate "
+              f"drive models were filtered out due to drive counts < {args.min_drives:,} (modify with --min-drives)" )
 
-    print("\nETL pipeline stage 2 / 5: Exclude candidate drive models with insufficient deploy counts...")
-    print(f"\tMinimum model deploy count: {args.min_drives:,} (modify with --min-drives)")
-    # Pull deploy counts for all raw models of interest
-    full_raw_model_list: list[str] = []
-    for drive_model in sorted(drive_model_mapping):
-        full_raw_model_list += drive_model_mapping[drive_model]
-
-    # print(json.dumps(full_raw_model_list, indent=4))
-
-    raw_model_deploy_count_dataframe: polars.DataFrame = _get_deploy_counts_per_raw_model_string(
-        original_source_lazyframe, sorted(full_raw_model_list) )
-
-    aggregated_deploy_counts: dict[str, int] = {}
-    for curr_row in raw_model_deploy_count_dataframe.iter_rows(named=True):
-        # print(f"\t{curr_row["model"]}: {curr_row["drives_deployed"]}")
-        normalized_name: str = _normalize_drive_model_name(curr_row["model"])
-        if normalized_name not in aggregated_deploy_counts:
-            aggregated_deploy_counts[normalized_name] = 0
-        aggregated_deploy_counts[normalized_name] += curr_row["drives_deployed"]
-
-    original_drive_models_of_interest: int = len(drive_model_mapping)
-    drive_models_were_excluded: bool = False
-    for curr_drive_model in sorted(aggregated_deploy_counts):
-        if aggregated_deploy_counts[curr_drive_model] < args.min_drives:
-            print(f"\tINFO: excluded candidate drive model \"{curr_drive_model}\" "
-                  f"\n\t\tDeployed drives: {aggregated_deploy_counts[curr_drive_model]:5,}")
-
-            del drive_model_mapping[curr_drive_model]
-
-            if not drive_models_were_excluded:
-                drive_models_were_excluded = True
-
-    if drive_models_were_excluded:
-        print()
-
-    # print(json.dumps(aggregated_deploy_counts, indent=4, sort_keys=True))
-    print(f"\tDrive models with sufficient deploy counts: {len(drive_model_mapping):,} "
-          f"(down from initial list of {original_drive_models_of_interest:,} candidate drive models)")
+    return drive_model_deploy_count_dataframe
 
 
 def _get_afr_stats( args: argparse.Namespace,
                     original_source_lazyframe: polars.LazyFrame,
                     drive_model_mapping: dict[str, list[str]] ) -> dict[str, dict[str, float]]:
     afr_stats: dict[str, dict[str, float]] = {}
-    print("\nETL pipeline stage 3 / 5: Retrieve AFR calculation input data from Polars...")
+    print("\nETL pipeline stage 4 / 6: Retrieve AFR calculation input data from Polars...")
     print(f"\tRetrieving daily drive health data for {len(drive_model_mapping):,} drive models...")
 
     operation_start: float = time.perf_counter()
@@ -223,7 +177,7 @@ def _get_afr_stats( args: argparse.Namespace,
     operation_duration: float = time.perf_counter() - operation_start
     print(f"\tRetrieved drive health data in {operation_duration:.01f} seconds")
 
-    print("\nETL pipeline stage 4 / 5: Perform AFR calculations...")
+    print("\nETL pipeline stage 5 / 6: Perform AFR calculations...")
     operation_start: float = time.perf_counter()
     operation_duration: float = time.perf_counter() - operation_start
     print(f"\tQuarterly AFR calculations completed in {operation_duration:.01f} seconds")
@@ -318,17 +272,77 @@ def _get_afr_for_single_model(drive_model_normalized: str,
     return quarterly_afr
 
 
+def _create_normalized_model_name_series( drive_models_name_smart_series: polars.Series ) -> polars.Series:
+    normalized_names: list[str] = []
+    for smart_model_name in drive_models_name_smart_series:
+        normalized_names.append(_normalize_drive_model_name(smart_model_name))
+    model_names_normalized_series: polars.Series = polars.Series("model_name_normalized", normalized_names)
+
+    return model_names_normalized_series
+
+
+def _get_smart_drive_model_mappings(smart_drive_model_names_series: polars.Series) -> polars.DataFrame:
+    print("\nETL pipeline stage 2 / 6: Create mapping table for SMART model name -> normalized model name...")
+
+    smart_drive_model_mappings_df: polars.DataFrame = smart_drive_model_names_series.to_frame()
+
+    # Add column with normalized drive model name
+    smart_drive_model_mappings_df: polars.DataFrame = smart_drive_model_mappings_df.with_columns(
+        polars.col("drive_model_name_smart").map_batches(_create_normalized_model_name_series,
+                                                         return_dtype=polars.String).alias(
+            "drive_model_name_normalized")
+    )
+
+    normalized_drive_model_name_count: int = smart_drive_model_mappings_df.get_column(
+        "drive_model_name_normalized" ).unique().len()
+
+    print(f"\tFound {normalized_drive_model_name_count} normalized drive model names")
+
+    return smart_drive_model_mappings_df
+
+
+def _get_smart_drive_model_names(args: argparse.Namespace,
+                                original_source_lazyframe: polars.LazyFrame) -> polars.Series:
+
+    print("\nETL pipeline stage 1 / 6: Retrieve candidate SMART drive model names...")
+
+    with open(args.drive_patterns_json, "r") as json_handle:
+        drive_model_patterns: list[str] = json.load(json_handle)
+    print(f"\tRetrieved {len(drive_model_patterns):,} regexes for SMART drive model names from "
+        f"\"{args.drive_patterns_json}\"")
+
+    multi_regex_pattern: str = "|".join(drive_model_patterns)
+    # print(f"multi regex pattern: {multi_regex_pattern}")
+
+    # We want all unique drive model names found in the source file which match one of the drive model regexes
+    operation_start: float = time.perf_counter()
+    print("\tRetrieving unique candidate SMART drive model names from Polars...")
+    drive_models_smart_series: polars.Series = original_source_lazyframe.select("model").unique().filter(
+        polars.col("model").str.contains(multi_regex_pattern)
+    ).sort("model").collect().to_series().rename("drive_model_name_smart")
+    operation_end: float = time.perf_counter()
+    operation_duration: float = operation_end - operation_start
+
+    # How many unique drive models and how much time?
+    print( f"\t\tRetrieved {len(drive_models_smart_series):,} candidate SMART drive model names in "
+        f"{operation_duration:.01f} seconds")
+
+    return drive_models_smart_series
+
+
 def _main() -> None:
     args: argparse.Namespace = _parse_args()
     original_source_lazyframe: polars.LazyFrame = _source_lazyframe(args)
-    drive_model_mapping: dict[str, list[str]] = _get_drive_model_mapping(args, original_source_lazyframe)
+    smart_drive_model_names: polars.Series = _get_smart_drive_model_names(args, original_source_lazyframe)
+    smart_model_name_mappings_dataframe: polars.DataFrame = _get_smart_drive_model_mappings(smart_drive_model_names)
     #print(json.dumps(drive_model_mapping, indent=4, sort_keys=True))
-    _exclude_insufficient_deploy_counts(args, original_source_lazyframe, drive_model_mapping )
+    drive_deploy_count_df: polars.DataFrame = _get_deploy_counts_with_min_drive_count_filter(
+        args, original_source_lazyframe, smart_model_name_mappings_dataframe )
     drive_model_quarterly_afr_stats: dict[str, dict[str, float]] = _get_afr_stats( args,
-        original_source_lazyframe, drive_model_mapping )
+        original_source_lazyframe, smart_model_name_mappings_dataframe )
     # print( "\nDrive quarterly AFR data:\n" + json.dumps(drive_model_quarterly_afr_stats, indent=4, sort_keys=True) )
 
-    print("\nETL pipeline stage 5 / 5: Writing AFR data to visualization CSV...")
+    print("\nETL pipeline stage 6 / 6: Writing AFR data to visualization CSV...")
     operation_start: float = time.perf_counter()
     operation_duration: float = time.perf_counter() - operation_start
     print(f"\tVisualization CSV created in {operation_duration:.01f} seconds")
