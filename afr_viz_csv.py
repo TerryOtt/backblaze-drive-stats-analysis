@@ -364,6 +364,9 @@ def _generate_output_csv(args: argparse.Namespace,
 
             for curr_drive_model in human_readable_data:
                 # Is there still data for this drive?
+                # TODO: change AFR calc data to be an array with AFR per quarter rather than a dict
+                #   Change the for here to checking to see if the array for the drive in question is empty
+                #   If not empty, add a cell to this CSV row, otherwise no op
                 for curr_drive_quarter in sorted(human_readable_data[curr_drive_model]):
                     curr_quarter_afr: float = human_readable_data[curr_drive_model][curr_drive_quarter]
                     data_row[csv_columns_per_drive_model[curr_drive_model]] = curr_quarter_afr
