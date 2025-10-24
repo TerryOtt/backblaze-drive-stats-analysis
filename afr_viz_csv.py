@@ -1,4 +1,5 @@
 import argparse
+import datetime
 import json
 import polars
 import re
@@ -85,9 +86,9 @@ def _get_drive_model_mapping(args: argparse.Namespace,
 
     # We want all unique drive model names found in the source file which match one of the drive model regexes
     operation_start: float = time.perf_counter()
-    drive_models: polars.Series = original_source_lazyframe.select("model").filter(
+    drive_models: polars.Series = original_source_lazyframe.select("model").unique().filter(
         polars.col("model").str.contains(multi_regex_pattern)
-    ).unique().sort("model").collect().to_series()
+    ).sort("model").collect().to_series()
     operation_end: float = time.perf_counter()
     operation_duration: float = operation_end - operation_start
 
@@ -119,7 +120,7 @@ def _get_unique_serial_nums_for_drive( args: argparse.Namespace,
     # Query unique serial numbers for these drive models
     row_count_df: polars.DataFrame = source_lazyframe.select("model", "serial_number").filter(
             polars.col("model").str.contains_any(drive_model_raw_names)
-        ).select("serial_number").unique("serial_number").select(polars.len()).collect()
+        ).select("serial_number").unique().select(polars.len()).collect()
 
     unique_serial_count: int = row_count_df.item()
 
@@ -149,45 +150,28 @@ def _get_afr_calc_data(source_lazyframe: polars.LazyFrame, drive_model_normalize
             polars.col("failure").sum().alias("failure_count"),
         ]
     ).sort("date").collect()
-    print(f"\t\t\t{drive_model_normalized}: {len(afr_calc_data):6,} days of aggregated AFR calc data from Polars")
+    # print(f"\t\t\tRetrieved {len(afr_calc_data):6,} days of aggregated AFR calc data from Polars")
     return afr_calc_data
 
 
-def _get_afr_for_single_model(drive_model_normalized: str,
-                            drive_model_raw_names: list[str],
-                            source_lazyframe: polars.LazyFrame,
-                            args: argparse.Namespace ) -> dict[str, int | dict[str, float]] | None:
+def _exclude_insufficient_deploy_counts(args: argparse.Namespace,
+                                        original_source_lazyframe: polars.LazyFrame,
+                                        drive_model_mapping: dict[str, list[str]] ) -> None:
 
-    print(f"\t\tAFR calc starting on drive model {drive_model_normalized}...")
-    # print(f"\t\t\tDrive model names to query Polars datasource for: {json.dumps(drive_model_raw_names)}")
+    # Pull deploy counts for all raw models of interest
+    full_raw_model_list: list[str] = []
+    for drive_model in sorted(drive_model_mapping):
+        full_raw_model_list += drive_model_mapping[drive_model]
 
-    # Query unique serial numbers for these drive models
-    unique_serialnum_count: int = _get_unique_serial_nums_for_drive(args, source_lazyframe, drive_model_raw_names)
-    # print(f"\t\t\tUnique serial number count: {unique_serialnum_count}")
+    full_raw_model_list.sort()
 
-    if unique_serialnum_count < args.min_drives:
-        print(f"\tINFO: culling model \"{drive_model_normalized}\" " 
-              f"(total deployed drive count of {unique_serialnum_count:,} < min of {args.min_drives:,}; "
-              "modify with --min-drives)")
-        return None
-
-    quarterly_afr: dict[str, int | dict[str, float]] = {
-        'deployed_drives': unique_serialnum_count,
-    }
-
-    data_for_afr_calc: polars.DataFrame = _get_afr_calc_data(source_lazyframe, drive_model_normalized,
-                                                             drive_model_raw_names)
-
-    quarterly_afr['quarterly_afr'] = {}
-
-    return quarterly_afr
-
+    print(json.dumps(full_raw_model_list, indent=4))
 
 def _get_afr_stats( args: argparse.Namespace,
                     original_source_lazyframe: polars.LazyFrame,
                     drive_model_mapping: dict[str, list[str]] ) -> dict[str, dict[str, float]]:
     afr_stats: dict[str, dict[str, float]] = {}
-    print("\nGetting AFR stats...")
+    print("\nComputing quarterly AFR for all drives of interest...")
 
     operation_start: float = time.perf_counter()
     for curr_drive_model in sorted(drive_model_mapping):
@@ -204,14 +188,111 @@ def _get_afr_stats( args: argparse.Namespace,
     return afr_stats
 
 
+def _get_month_quarter_lookup_table() -> dict[int, int]:
+    month_quarter_lookup_table: dict[int, int] = {
+         1: 1,
+         2: 1,
+         3: 1,
+
+         4: 2,
+         5: 2,
+         6: 2,
+
+         7: 3,
+         8: 3,
+         9: 3,
+
+        10: 4,
+        11: 4,
+        12: 4,
+    }
+
+    return month_quarter_lookup_table
+
+
+def _afr_calc(cumulative_drive_days: int, cumulative_drive_failures: int) -> float:
+    # Scaling factor is 365 unit-days / year
+    afr_scaling_factor: float = 365.0
+
+    annualized_failure_rate_percent: float = ( float(cumulative_drive_failures) / float(cumulative_drive_days) ) * \
+                                             afr_scaling_factor * 100.0
+
+    return annualized_failure_rate_percent
+
+
+def _do_quarterly_afr_calcs(drive_quarterly_afr_data: dict[str, dict[str, int]]) -> dict[str, float]:
+    drive_quarterly_afr: dict[str, float] = {}
+
+    cumulative_drive_days: int = 0
+    cumulative_drive_failures: int = 0
+    for curr_quarter in sorted(drive_quarterly_afr_data):
+        cumulative_drive_days += drive_quarterly_afr_data[curr_quarter]['drive_days']
+        cumulative_drive_failures += drive_quarterly_afr_data[curr_quarter]['failure_count']
+        drive_quarterly_afr[curr_quarter] = _afr_calc(cumulative_drive_days, cumulative_drive_failures)
+
+    return drive_quarterly_afr
+
+
+def _get_afr_for_single_model(drive_model_normalized: str,
+                              drive_model_raw_names: list[str],
+                              source_lazyframe: polars.LazyFrame,
+                              args: argparse.Namespace ) -> dict[str, int | dict[str, float]] | None:
+
+    # print(f"\t\tAFR calc starting on drive model {drive_model_normalized}...")
+    # print(f"\t\t\tDrive model names to query Polars datasource for: {json.dumps(drive_model_raw_names)}")
+
+    # Query unique serial numbers for these drive models
+    unique_serialnum_count: int = _get_unique_serial_nums_for_drive(args, source_lazyframe, drive_model_raw_names)
+    # print(f"\t\t\tUnique serial number count: {unique_serialnum_count}")
+
+    if unique_serialnum_count < args.min_drives:
+        print(f"\tINFO: excluding model \"{drive_model_normalized}\" " 
+              f"(drive count of {unique_serialnum_count:,} < min of {args.min_drives:,}; "
+              "modify with --min-drives)")
+        return None
+
+    quarterly_afr: dict[str, int | dict[str, float]] = {
+        'deployed_drives': unique_serialnum_count,
+    }
+
+    data_for_afr_calc: polars.DataFrame = _get_afr_calc_data(source_lazyframe, drive_model_normalized,
+                                                             drive_model_raw_names)
+
+    drive_quarterly_afr_data: dict[str, dict[str, int]] = {}
+    month_quarter_lookup_table: dict[int, int] = _get_month_quarter_lookup_table()
+
+    for curr_results_row in data_for_afr_calc.iter_rows(named=True):
+        row_date: datetime.date = curr_results_row['date']
+        drive_days: int = curr_results_row['drives_seen']
+        failure_count: int = curr_results_row['failure_count']
+
+        year_quarter: str = f"{row_date.year} Q{str(month_quarter_lookup_table[row_date.month])}"
+
+        if year_quarter not in drive_quarterly_afr_data:
+            drive_quarterly_afr_data[year_quarter] = {
+                'drive_days': 0,
+                'failure_count': 0,
+            }
+
+        drive_quarterly_afr_data[year_quarter]['drive_days'] += drive_days
+        drive_quarterly_afr_data[year_quarter]['failure_count'] += failure_count
+
+    drive_quarterly_afr: dict[str, float] = _do_quarterly_afr_calcs(drive_quarterly_afr_data)
+
+    quarterly_afr['quarterly_afr']: dict[str, float] = drive_quarterly_afr
+
+    return quarterly_afr
+
+
 def _main() -> None:
     args: argparse.Namespace = _parse_args()
     original_source_lazyframe: polars.LazyFrame = _source_lazyframe(args)
     drive_model_mapping: dict[str, list[str]] = _get_drive_model_mapping(args, original_source_lazyframe)
     #print(json.dumps(drive_model_mapping, indent=4, sort_keys=True))
-    drive_model_quarterly_afr_stats: dict[str, dict[str, float]] = _get_afr_stats( args,
-        original_source_lazyframe, drive_model_mapping )
-    print( "\nDrive quarterly AFR data:\n" + json.dumps(drive_model_quarterly_afr_stats, indent=4, sort_keys=True) )
+    _exclude_insufficient_deploy_counts(args, original_source_lazyframe, drive_model_mapping )
+    # drive_model_quarterly_afr_stats: dict[str, dict[str, float]] = _get_afr_stats( args,
+    #     original_source_lazyframe, drive_model_mapping )
+    # print( "\nDrive quarterly AFR data:\n" + json.dumps(drive_model_quarterly_afr_stats, indent=4, sort_keys=True) )
 
 
 if __name__ == "__main__":
