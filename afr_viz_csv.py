@@ -94,7 +94,7 @@ def _get_drive_model_mapping(args: argparse.Namespace,
     operation_duration: float = operation_end - operation_start
 
     # How many unique drive models and how much time?
-    print( f"\t\tRetrieved {len(drive_models):,} drive model names in {operation_duration:.01f} seconds")
+    print( f"\t\tRetrieved {len(drive_models):,} candidate drive model names in {operation_duration:.01f} seconds")
 
     # Iterate over drive models to create normalized name -> [raw name from source, ...] mappings
     for current_drive_model in drive_models:
