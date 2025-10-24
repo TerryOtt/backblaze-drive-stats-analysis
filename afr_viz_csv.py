@@ -315,7 +315,7 @@ def _truncate_drive_model_name_mapping_dataframe(smart_model_name_mappings_dataf
 
 
 def _generate_output_csv(args: argparse.Namespace,
-                         human_readable_data: dict[str, dict[str, float]],
+                          computed_afr_data: dict[str, dict[str, float]],
                          drive_deploy_count_dataframe: polars.DataFrame ) -> None:
 
     column_names: list[str] = [
@@ -325,7 +325,7 @@ def _generate_output_csv(args: argparse.Namespace,
 
     max_quarters: int = 0
     csv_columns_per_drive_model: dict[str, str] = {}
-    for curr_drive_model in sorted(human_readable_data):
+    for curr_drive_model in sorted(computed_afr_data):
 
         # Get drives deployed for this drive model
         drives_deployed: int = drive_deploy_count_dataframe.filter(
@@ -336,15 +336,24 @@ def _generate_output_csv(args: argparse.Namespace,
 
         column_names.append(model_and_drive_count)
         csv_columns_per_drive_model[curr_drive_model] = model_and_drive_count
-        max_quarters = max(max_quarters, len(human_readable_data[curr_drive_model]))
+        max_quarters = max(max_quarters, len(computed_afr_data[curr_drive_model]))
 
-    with open(args.output_csv, "w") as output_csv:
+    # Create dict of lists of AFR values per drive model
+    human_readable_data: dict[str, list[float]] = {}
+    for curr_drive_model in sorted(computed_afr_data):
+        human_readable_data[curr_drive_model]: list[float] = []
+        for curr_qtr in sorted(computed_afr_data[curr_drive_model]):
+            human_readable_data[curr_drive_model].append(computed_afr_data[curr_drive_model][curr_qtr])
+
+    # Do not need computed AFR data anymore, make the memory eligible for garbage collection
+    del computed_afr_data
+
+    with open(args.output_csv, "w", newline='') as output_csv:
         csv_writer = csv.DictWriter(output_csv, fieldnames=column_names)
-
         csv_writer.writeheader()
 
         # print(json.dumps(column_names, indent=2))
-        # print(f"Max quarters of data for any drive model: {max_quarters}")
+        print(f"\tMax quarters of AFR data for any drive model: {max_quarters:,}")
 
         agg_increments_per_year: int = 4
         display_year: int = 0
@@ -356,22 +365,20 @@ def _generate_output_csv(args: argparse.Namespace,
             elif display_quarter == 1:
                 display_year += 1
 
-            #print(f"Creating CSV row for year {display_year}, quarter {display_quarter}")
+            # print(f"\t\tCreating CSV row for year {display_year}, quarter {display_quarter}")
             data_row: dict[str, int | float | str] = {
                 'Year':  display_year,
                 'Quarter': display_quarter,
             }
 
+            # Iterate across all drives to see if they have AFR data for the current quarter
             for curr_drive_model in human_readable_data:
-                # Is there still data for this drive?
-                # TODO: change AFR calc data to be an array with AFR per quarter rather than a dict
-                #   Change the for here to checking to see if the array for the drive in question is empty
-                #   If not empty, add a cell to this CSV row, otherwise no op
-                for curr_drive_quarter in sorted(human_readable_data[curr_drive_model]):
-                    curr_quarter_afr: float = human_readable_data[curr_drive_model][curr_drive_quarter]
-                    data_row[csv_columns_per_drive_model[curr_drive_model]] = curr_quarter_afr
+                # Is there still AFR data for this drive or have we consumed it all?
+                if human_readable_data[curr_drive_model]:
+                    curr_quarter_afr: float = human_readable_data[curr_drive_model].pop(0)
+                    data_row[csv_columns_per_drive_model[curr_drive_model]] = f"{curr_quarter_afr:.03f}"
 
-            #print(json.dumps(data_row, indent=4, sort_keys=True))
+            # print(json.dumps(data_row, indent=4, sort_keys=True))
             csv_writer.writerow(data_row)
 
 
