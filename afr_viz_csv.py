@@ -1,6 +1,5 @@
 import argparse
 import csv
-import datetime
 import json
 import polars
 import re
@@ -172,8 +171,7 @@ def _get_afr_input_data(source_lazyframe: polars.LazyFrame,
     return afr_input_data
 
 
-def _get_afr_stats( args: argparse.Namespace,
-                    source_lazyframe: polars.LazyFrame,
+def _get_afr_stats( source_lazyframe: polars.LazyFrame,
                     smart_model_name_mappings_dataframe: polars.DataFrame ) -> dict[str, dict[str, float]]:
 
     print("\nETL pipeline stage 4 / 6: Retrieve AFR calculation input data from Polars...")
@@ -393,7 +391,7 @@ def _main() -> None:
 
     # print(smart_model_name_mappings_dataframe)
 
-    drive_model_quarterly_afr_stats: dict[str, dict[str, float]] = _get_afr_stats( args,
+    drive_model_quarterly_afr_stats: dict[str, dict[str, float]] = _get_afr_stats(
         original_source_lazyframe, smart_model_name_mappings_dataframe )
     # print( "\nDrive quarterly AFR data:\n" + json.dumps(drive_model_quarterly_afr_stats, indent=4, sort_keys=True) )
 
