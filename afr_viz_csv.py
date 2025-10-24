@@ -73,7 +73,7 @@ def _normalize_drive_model_name(raw_drive_model: str) -> str:
 def _get_drive_model_mapping(args: argparse.Namespace,
                              original_source_lazyframe: polars.LazyFrame) -> dict[str, list[str]]:
 
-    print("\nGetting candidate drive model names...")
+    print("\nETL pipeline stage 1 / 5: Getting candidate drive model names...")
 
     drive_model_mapping: dict[str, list[str]] = {}
 
@@ -164,7 +164,7 @@ def _exclude_insufficient_deploy_counts(args: argparse.Namespace,
                                         original_source_lazyframe: polars.LazyFrame,
                                         drive_model_mapping: dict[str, list[str]] ) -> None:
 
-    print("\nExcluding any candidate drive models with insufficient deploy counts...")
+    print("\nETL pipeline stage 2 / 5: Excluding candidate drive models with insufficient deploy counts...")
     print(f"\tMinimum model deploy count: {args.min_drives:,} (modify with --min-drives)")
     # Pull deploy counts for all raw models of interest
     full_raw_model_list: list[str] = []
@@ -188,7 +188,7 @@ def _exclude_insufficient_deploy_counts(args: argparse.Namespace,
     drive_models_were_excluded: bool = False
     for curr_drive_model in sorted(aggregated_deploy_counts):
         if aggregated_deploy_counts[curr_drive_model] < args.min_drives:
-            print(f"\tINFO: excluding drive model \"{curr_drive_model}\" "
+            print(f"\tINFO: excluding candidate drive model \"{curr_drive_model}\" "
                   f"\n\t\tDeployed drives: {aggregated_deploy_counts[curr_drive_model]:5,}")
 
             del drive_model_mapping[curr_drive_model]
@@ -208,8 +208,8 @@ def _get_afr_stats( args: argparse.Namespace,
                     original_source_lazyframe: polars.LazyFrame,
                     drive_model_mapping: dict[str, list[str]] ) -> dict[str, dict[str, float]]:
     afr_stats: dict[str, dict[str, float]] = {}
-    print("\nComputing quarterly AFR for drives models...")
-    print(f"\tRetrieving drive health data from Polars for {len(drive_model_mapping):,} drive models...")
+    print("\nETL pipeline stage 3 / 5: Retrieving AFR calculation input data from Polars...")
+    print(f"\tRetrieving daily drive health data for {len(drive_model_mapping):,} drive models...")
 
     operation_start: float = time.perf_counter()
     # for curr_drive_model in sorted(drive_model_mapping):
@@ -221,7 +221,13 @@ def _get_afr_stats( args: argparse.Namespace,
     #         afr_stats[stats_key_with_deploy_count] = afr_result_for_drive['quarterly_afr']
     #
     operation_duration: float = time.perf_counter() - operation_start
-    print(f"\tAFR calculations completed in {operation_duration:.01f} seconds")
+    print(f"\tRetrieved drive health data in {operation_duration:.01f} seconds")
+
+    print("\nETL pipeline stage 4 / 5: Performing AFR calculations...")
+    operation_start: float = time.perf_counter()
+    operation_duration: float = time.perf_counter() - operation_start
+    print(f"\tQuarterly AFR calculations completed in {operation_duration:.01f} seconds")
+
 
     return afr_stats
 
@@ -321,6 +327,11 @@ def _main() -> None:
     drive_model_quarterly_afr_stats: dict[str, dict[str, float]] = _get_afr_stats( args,
         original_source_lazyframe, drive_model_mapping )
     # print( "\nDrive quarterly AFR data:\n" + json.dumps(drive_model_quarterly_afr_stats, indent=4, sort_keys=True) )
+
+    print("\nETL pipeline stage 5 / 5: Writing AFR data to visualization CSV...")
+    operation_start: float = time.perf_counter()
+    operation_duration: float = time.perf_counter() - operation_start
+    print(f"\tVisualization CSV created in {operation_duration:.01f} seconds")
 
 
 if __name__ == "__main__":
