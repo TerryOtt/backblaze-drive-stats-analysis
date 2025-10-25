@@ -16,7 +16,7 @@ Runtime tests were done from AWS `us-west-1` region as `us-west-1` has the lowes
 region `us-west-004` where the Backblaze B2 bucket hosting the drive stats data residess.
 
 ```
-$ apt-get -y install python3-venv sudo build-essential python3-dev
+$ sudo apt-get -y install python3-venv sudo build-essential python3-dev
 $ python3 -m venv .venv
 $ source .venv/bin/activate
 $ pip3 install -r requirements.txt
