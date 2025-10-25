@@ -4,7 +4,7 @@
 
 ## Reading Local Parquet File
 
-```bash 
+```
 $ (Get local Parquet data (backblaze-drive-stats-pyiceberg))
 $ source .venv/bin/activate
 $ python3 afr_viz_csv.py                  \
