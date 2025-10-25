@@ -4,6 +4,14 @@
 
 ## Creating Quarterly AFR CSV
 
+**NOTE**: 64 GB of memory is _required_, otherwise process will be killed by the OS ue to memory exhaustion.
+
+Candidate AWS EC2 instances (just helpful references, runs fine anywhere):
+
+* c8g.8xlarge (16 CPU, 64 GB)
+* m4g.4xlarge (8 CPU, 64 GB)
+* r8g.2xlarge (4 CPU, 64 GB)
+
 ```
 $ python3 -m venv .venv
 $ source .venv/bin/activate
