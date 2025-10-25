@@ -128,7 +128,15 @@ def _source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
     print(f"\tCurrent Backblaze Drive Stats Iceberg schema file: {base_filename}")
     print(f"\t\tSchema URI: {current_iceberg_schema_uri}")
 
-    source_lazyframe: polars.LazyFrame = polars.scan_iceberg(current_iceberg_schema_uri)
+    storage_options = {
+        "s3.endpoint"           : args.s3_endpoint,
+        "s3.region"             : args.b2_region,
+        "s3.access-key-id"      : args.b2_access_key,
+        "s3.secret-access-key"  : args.b2_secret_access_key,
+    }
+
+    source_lazyframe: polars.LazyFrame = polars.scan_iceberg(current_iceberg_schema_uri, 
+                                                             storage_options=storage_options)
 
     return source_lazyframe
 
