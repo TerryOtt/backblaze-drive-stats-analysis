@@ -4,7 +4,7 @@
 
 ## Creating Quarterly AFR CSV
 
-**NOTE**: 64 GB of memory is _required_, otherwise process will be killed by the OS ue to memory exhaustion.
+**NOTE**: 64 GB of memory is _required_, otherwise process will be killed by the OS due to memory exhaustion.
 
 Candidate AWS EC2 instances (just helpful references, runs fine anywhere):
 
@@ -19,7 +19,7 @@ To get the access key/secret access key for read-only access to the B2 bucket, v
 the [Backblaze source data site](https://www.backblaze.com/cloud-storage/resources/hard-drive-test-data)
 and search for "Application Key." 
 
-They values are public as it's read-only access, but GitHub doesn't love seeing access keys committed to
+Both values are public because they only provide read-only access, but GitHub doesn't love seeing access keys committed to
 repositories. :)
 
 ```
