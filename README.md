@@ -8,12 +8,19 @@
 
 Candidate AWS EC2 instances (just helpful references, runs fine anywhere):
 
-* **c8g.8xlarge** (16 CPU, 64 GB): 40 seconds
-* **m4g.4xlarge** (8 CPU, 64 GB): 60 seconds
-* **r8g.2xlarge** (4 CPU, 64 GB): 90 seconds
+* **c7i.8xlarge** (16 CPU, 64 GB): 40 seconds
+* **m7i.4xlarge** (8 CPU, 64 GB): 60 seconds
+* **r7i.2xlarge** (4 CPU, 64 GB): 90 seconds
 
 Runtime tests were done from AWS `us-west-1` region as `us-west-1` has the lowest latency to the Backblaze 
-region `us-west-004` where the Backblaze B2 bucket hosting the drive stats data residess.
+region `us-west-004` where the Backblaze B2 bucket hosting the drive stats data resides.
+
+To get the access key/secret access key for read-only access to the B2 bucket, visit 
+the [Backblaze source data site](https://www.backblaze.com/cloud-storage/resources/hard-drive-test-data)
+and search for "Application Key." 
+
+They values are public as it's read-only access, but GitHub doesn't love seeing access keys committed to
+repositories. :)
 
 ```
 $ sudo apt-get update
