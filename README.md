@@ -17,7 +17,7 @@ region `us-west-004` where the Backblaze B2 bucket hosting the drive stats data 
 
 To get the access key/secret access key for read-only access to the B2 bucket, visit 
 the [Backblaze source data site](https://www.backblaze.com/cloud-storage/resources/hard-drive-test-data)
-and search for "Application Key." 
+and search for the string "**Application Key**." 
 
 Both values are public because they only provide read-only access, but GitHub doesn't love seeing access keys committed to
 repositories. :)
