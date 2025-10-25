@@ -8,11 +8,15 @@
 
 Candidate AWS EC2 instances (just helpful references, runs fine anywhere):
 
-* c8g.8xlarge (16 CPU, 64 GB)
-* m4g.4xlarge (8 CPU, 64 GB)
-* r8g.2xlarge (4 CPU, 64 GB)
+* c8g.8xlarge (16 CPU, 64 GB): 40 seconds
+* m4g.4xlarge (8 CPU, 64 GB): 60 seconds
+* r8g.2xlarge (4 CPU, 64 GB): 90 seconds
+
+Runtime tests were done from AWS `us-west-1` region as `us-west-1` has the lowest latency to the Backblaze 
+region `us-west-004` where the Backblaze B2 bucket hosting the drive stats data residess.
 
 ```
+$ apt-get -y install python3-venv sudo build-essential python3-dev
 $ python3 -m venv .venv
 $ source .venv/bin/activate
 $ pip3 install -r requirements.txt
