@@ -20,7 +20,11 @@ $ apt-get -y install python3-venv sudo build-essential python3-dev
 $ python3 -m venv .venv
 $ source .venv/bin/activate
 $ pip3 install -r requirements.txt
-$ python3 afr_viz_csv_from_iceberg.py drives_of_interest_regexes.json [s3_access_key] [s3_secret_access_key] quarterly_afr_2025q3.csv
+$ python3 afr_viz_csv_from_iceberg.py   \
+    drives_of_interest_regexes.json     \
+    [s3_access_key]                     \
+    [s3_secret_access_key]              \
+    quarterly_afr_2025q3.csv
 
 Opening Polars datasource...
         Current Backblaze Drive Stats Iceberg schema file: 00248-af7b2e6d-6381-4dcd-a949-a6f8f74ad51e.metadata.json
