@@ -6,7 +6,8 @@
 
 **NOTE**: 64 GB of memory is _required_, otherwise process will be killed by the OS due to memory exhaustion.
 
-Candidate AWS EC2 instances (just helpful references, runs fine anywhere):
+Candidate AWS EC2 instances (just helpful references, the code will run on an ancient laptop as long as 
+it has at least 64 GB of memory):
 
 * **c7i.8xlarge** (16 CPU, 64 GB): 40 seconds
 * **m7i.4xlarge** (8 CPU, 64 GB): 60 seconds
