@@ -130,7 +130,8 @@ def _get_deploy_counts_with_min_drive_count_filter(args: argparse.Namespace,
 
     if len(drive_model_deploy_count_dataframe) < candidate_drive_models_count:
         print(f"\tINFO: {candidate_drive_models_count - len(drive_model_deploy_count_dataframe):,} candidate "
-              f"drive models were filtered out due to drive counts < {args.min_drives:,} (modify with --min-drives)" )
+              f"drive models were filtered out due to drive counts < {args.min_drives:,} "
+              "\n\t\t(modify with --min-drives)" )
 
     return drive_model_deploy_count_dataframe
 
@@ -272,8 +273,8 @@ def _get_smart_drive_model_mappings(smart_drive_model_names_series: polars.Serie
     normalized_drive_model_name_count: int = smart_drive_model_mappings_df.get_column(
         "drive_model_name_normalized" ).unique().len()
 
-    print(f"\tCreated {normalized_drive_model_name_count} normalized drive model names from "
-          f"{smart_drive_model_names_series.len()} SMART drive model names")
+    print(f"\t{smart_drive_model_names_series.len()} SMART drive model names -> {normalized_drive_model_name_count} "
+        "normalized drive model names" )
 
     return smart_drive_model_mappings_df
 
