@@ -177,8 +177,8 @@ def _get_afr_input_data(source_lazyframe: polars.LazyFrame,
 def _get_afr_stats( source_lazyframe: polars.LazyFrame,
                     smart_model_name_mappings_dataframe: polars.DataFrame ) -> dict[str, dict[str, float]]:
 
-    print("\nETL pipeline stage 4 / 6: Retrieve AFR calculation input data from Polars...")
-    print(f"\tRetrieving daily drive health data for "
+    print("\nETL pipeline stage 4 / 6: Retrieve AFR calculation input data...")
+    print(f"\tRetrieving daily drive health data from Polars for "
           f"{smart_model_name_mappings_dataframe.get_column("drive_model_name_normalized").unique().len():,} "
           "drive models...")
 
