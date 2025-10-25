@@ -17,7 +17,7 @@ region `us-west-004` where the Backblaze B2 bucket hosting the drive stats data 
 
 ```
 $ sudo apt-get update
-$ sudo apt-get -y install python3-venv build-essential python3-dev
+$ sudo apt-get -y install python3-venv
 $ python3 -m venv .venv
 $ source .venv/bin/activate
 $ pip3 install -r requirements.txt
