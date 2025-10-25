@@ -136,10 +136,17 @@ def _get_deploy_counts_with_min_drive_count_filter(args: argparse.Namespace,
     return drive_model_deploy_count_dataframe
 
 
-def _get_afr_input_data(source_lazyframe: polars.LazyFrame,
+def _get_afr_input_data(args: argparse.Namespace,
+                        source_lazyframe: polars.LazyFrame,
                         smart_model_name_mappings_dataframe: polars.DataFrame) -> dict[str, dict[str, dict[str, int]]]:
 
     afr_input_data: dict[str, dict[str, dict[str, int]]] = {}
+    rows_retrieved: int = 0
+    month_quarter_lookup_table: dict[int, int] = _get_month_quarter_lookup_table()
+
+    print(f"\tReading incremental results batches, max rows per batch = {args.max_batch:,} "
+          "(modify with --max-batch)")
+
     for curr_batch_df in source_lazyframe.select(
             "date", "model", "failure"
         ).filter(
@@ -154,9 +161,10 @@ def _get_afr_input_data(source_lazyframe: polars.LazyFrame,
                 polars.col("failure").count().alias("drives_seen"),
                 polars.col("failure").sum().alias("failure_count"),
             ]
-        ).sort("drive_model_name_normalized", "date").collect_batches(chunk_size=16384):
+        ).sort("drive_model_name_normalized", "date").collect_batches(chunk_size=args.max_batch):
 
-        month_quarter_lookup_table: dict[int, int] = _get_month_quarter_lookup_table()
+        rows_retrieved += len(curr_batch_df)
+
         for curr_row in curr_batch_df.iter_rows(named=True):
             if curr_row["drive_model_name_normalized"] not in afr_input_data:
                 afr_input_data[curr_row["drive_model_name_normalized"]]: dict[str, dict[str, int]] = {}
@@ -172,10 +180,13 @@ def _get_afr_input_data(source_lazyframe: polars.LazyFrame,
             this_entry["drive_days"] += curr_row["drives_seen"]
             this_entry["failure_count"] += curr_row["failure_count"]
 
+    print(f"\tRetrieved {rows_retrieved:,} rows of drive health data from Polars")
+
     return afr_input_data
 
 
-def _get_afr_stats( source_lazyframe: polars.LazyFrame,
+def _get_afr_stats( args: argparse.Namespace,
+                    source_lazyframe: polars.LazyFrame,
                     smart_model_name_mappings_dataframe: polars.DataFrame ) -> dict[str, dict[str, float]]:
 
     print("\nETL pipeline stage 4 / 6: Retrieve AFR calculation input data...")
@@ -185,7 +196,7 @@ def _get_afr_stats( source_lazyframe: polars.LazyFrame,
 
     operation_start: float = time.perf_counter()
     quarterly_afr_input_data: dict[str, dict[str, dict[str, int]]] = _get_afr_input_data(
-        source_lazyframe, smart_model_name_mappings_dataframe)
+        args, source_lazyframe, smart_model_name_mappings_dataframe)
     operation_duration: float = time.perf_counter() - operation_start
     print(f"\tRetrieved drive health data in {operation_duration:.01f} seconds")
 
@@ -414,13 +425,13 @@ def _main() -> None:
     # print(smart_model_name_mappings_dataframe)
 
     drive_model_quarterly_afr_stats: dict[str, dict[str, float]] = _get_afr_stats(
-        original_source_lazyframe, smart_model_name_mappings_dataframe )
+        args, original_source_lazyframe, smart_model_name_mappings_dataframe )
     # print( "\nDrive quarterly AFR data:\n" + json.dumps(drive_model_quarterly_afr_stats, indent=4, sort_keys=True) )
 
     _generate_output_csv(args, drive_model_quarterly_afr_stats, drive_deploy_count_dataframe)
 
     processing_duration: float = time.perf_counter() - processing_start
-    print(f"\nTotal processing time: {processing_duration:.01f} seconds\n")
+    print(f"\nETL pipeline total processing time: {processing_duration:.01f} seconds\n")
 
 
 if __name__ == "__main__":

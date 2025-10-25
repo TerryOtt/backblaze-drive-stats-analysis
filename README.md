@@ -24,25 +24,30 @@ ETL pipeline stage 2 / 6: Create mapping table for SMART model name -> normalize
 
 ETL pipeline stage 3 / 6: Retrieve deploy counts for drive models...
 	Retrieving drive deployment counts from Polars...
-		Retrieved drive deploy counts for 19 candidate drive models in 24.8 seconds
+		Retrieved drive deploy counts for 19 candidate drive models in 30.9 seconds
 
 	INFO: 15 candidate drive models were filtered out due to drive counts < 2,000 
 		(modify with --min-drives)
 
 ETL pipeline stage 4 / 6: Retrieve AFR calculation input data...
 	Retrieving daily drive health data from Polars for 19 drive models...
-	Retrieved drive health data in 4.7 seconds
+	Reading incremental results batches, max rows per batch = 16,384 (modify with --max-batch)
+	Retrieved 32,815 rows of drive health data from Polars
+	Retrieved drive health data in 4.0 seconds
 
 ETL pipeline stage 5 / 6: Perform AFR calculations...
 	Quarterly AFR calculations completed
 
 ETL pipeline stage 6 / 6: Writing AFR data to visualization CSV...
-	Visualization CSV file "quarterly_afr_2025q3.csv"
+	Creating visualization CSV file "quarterly_afr_2025q3.csv"
 	Max quarters of AFR data for any drive model: 33
-	
-$ ls -laF afr_2025q3_human_readable.csv
--rw-rw-r-- 1 ubuntu ubuntu 3326 Oct 20 20:39 afr_2025q3_human_readable.csv
 
-$ wc -l afr_2025q3_human_readable.csv
-34 afr_2025q3_human_readable.csv
+ETL pipeline total processing time: 40.4 seconds
+
+	
+$ ls -laF quarterly_afr_2025q3.csv 
+-rw-rw-r-- 1 ubuntu ubuntu 3326 Oct 20 20:39 quarterly_afr_2025q3.csv 
+
+$ wc -l quarterly_afr_2025q3.csv 
+34 quarterly_afr_2025q3.csv 
 ```
