@@ -322,6 +322,9 @@ def _generate_output_csv(args: argparse.Namespace,
                           computed_afr_data: dict[str, dict[str, float]],
                          drive_deploy_count_dataframe: polars.DataFrame ) -> None:
 
+    print("\nETL pipeline stage 6 / 6: Writing AFR data to visualization CSV...")
+    print(f"\tCreating visualization CSV file \"{args.output_csv}\"")
+
     column_names: list[str] = [
         "Year",
         "Quarter",
@@ -387,9 +390,14 @@ def _generate_output_csv(args: argparse.Namespace,
 
 
 def _main() -> None:
+
+    processing_start: float = time.perf_counter()
+
     args: argparse.Namespace = _parse_args()
     original_source_lazyframe: polars.LazyFrame = _source_lazyframe(args)
+
     smart_drive_model_names: polars.Series = _get_smart_drive_model_names(args, original_source_lazyframe)
+
     smart_model_name_mappings_dataframe: polars.DataFrame = _get_smart_drive_model_mappings(smart_drive_model_names)
 
     # Can delete SMART drive model name series as its no longer used
@@ -409,9 +417,10 @@ def _main() -> None:
         original_source_lazyframe, smart_model_name_mappings_dataframe )
     # print( "\nDrive quarterly AFR data:\n" + json.dumps(drive_model_quarterly_afr_stats, indent=4, sort_keys=True) )
 
-    print("\nETL pipeline stage 6 / 6: Writing AFR data to visualization CSV...")
-    print(f"\tVisualization CSV file \"{args.output_csv}\"")
     _generate_output_csv(args, drive_model_quarterly_afr_stats, drive_deploy_count_dataframe)
+
+    processing_duration: float = time.perf_counter() - processing_start
+    print(f"\nTotal processing time: {processing_duration:.01f} seconds\n")
 
 
 if __name__ == "__main__":
