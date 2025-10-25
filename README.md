@@ -5,9 +5,10 @@
 ```bash 
 $ (Get local Parquet data (backblaze-drive-stats-pyiceberg))
 $ source .venv/bin/activate
-$ python3 afr_viz_csv.py drives_of_interest_regexes.json \
-Downloads\backblaze_drive_stats_2025q3.parquet \
-quarterly_afr_2025q3.csv 
+$ python3 afr_viz_csv.py \
+    drives_of_interest_regexes.json \
+    backblaze_drive_stats_2025q3.parquet \
+    quarterly_afr_2025q3.csv 
 
 Polars datasource: local Parquet file, "backblaze_drive_stats_2025q3.parquet"
 
