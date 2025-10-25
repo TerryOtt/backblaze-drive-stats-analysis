@@ -94,13 +94,14 @@ def _get_deploy_counts_with_min_drive_count_filter(args: argparse.Namespace,
 
     # Oh my SQL of death
     drive_model_deploy_count_dataframe: polars.DataFrame = original_source_lazyframe.select(
-        "model", "serial_number" ).unique().filter(
+        "model", "serial_number"
+        ).unique().filter(
             polars.col("model").is_in(
                 smart_model_name_mappings_dataframe.get_column("drive_model_name_smart").to_list()
             )
         ).join(smart_model_name_mappings_dataframe.lazy(),
-               left_on="model",
-               right_on="drive_model_name_smart"
+           left_on="model",
+           right_on="drive_model_name_smart"
         ).select(
             "drive_model_name_normalized", "serial_number"
         ).group_by(
@@ -112,8 +113,10 @@ def _get_deploy_counts_with_min_drive_count_filter(args: argparse.Namespace,
         ).select(
             "drive_model_name_normalized", "drives_deployed"
         ).filter(
-          polars.col("drives_deployed").ge(args.min_drives)
-        ).sort("drive_model_name_normalized").collect()
+            polars.col("drives_deployed").ge(args.min_drives)
+        ).sort(
+            "drive_model_name_normalized"
+        ).collect()
 
     operation_duration: float = time.perf_counter() - operation_start
     print( f"\t\tRetrieved drive deploy counts for {len(drive_model_deploy_count_dataframe):,} candidate drive models "
