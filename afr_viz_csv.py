@@ -1,9 +1,13 @@
 import argparse
 import csv
 import json
+import pathlib
+
 import polars
 import re
 import time
+
+import iceberg_table
 
 
 def _parse_args() -> argparse.Namespace:
@@ -22,8 +26,36 @@ def _parse_args() -> argparse.Namespace:
                         f"{default_min_drives:,}",
                         type=int, default=default_min_drives)
 
+    default_s3_endpoint: str = "https://s3.us-west-004.backblazeb2.com"
+    default_b2_bucket_name: str = "drivestats-iceberg"
+    default_b2_region: str = "us-west-004"
+    default_table_path: str = "drivestats"
+
+    parser.add_argument("--s3-endpoint",
+                        default=default_s3_endpoint,
+                        help=f"S3 Endpoint (default: \"{default_s3_endpoint}\")")
+
+    parser.add_argument("--b2-region",
+                        default=default_b2_region,
+                        help=f"B2 Region (default: \"{default_b2_region}\")")
+
+    parser.add_argument("--bucket-name",
+                        default=default_b2_bucket_name,
+                        help=f"B2 Bucket Name (default: \"{default_b2_bucket_name}\")")
+
+    parser.add_argument("--table-path",
+                        default=default_table_path,
+                        help=f"B2 Bucket Table Path (default: \"{default_table_path}\")")
+
     parser.add_argument('drive_patterns_json', help='Path to JSON with drive regexes')
-    parser.add_argument("input_parquet_file", help="Path to parquet file we read from")
+
+    #parser.add_argument("input_parquet_file", help="Path to parquet file we read from")
+
+    parser.add_argument("b2_access_key",
+                        help="Backblaze B2 Access Key")
+    parser.add_argument("b2_secret_access_key",
+                        help="Backblaze B2 Secret Access Key")
+
     parser.add_argument("output_csv", help="Path to output visualization CSV file")
     return parser.parse_args()
 
@@ -77,8 +109,27 @@ def _normalize_drive_model_name(raw_drive_model: str) -> str:
 
 
 def _source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
-    print(f"\nPolars datasource: local Parquet file, \"{args.input_parquet_file}\"")
-    source_lazyframe: polars.LazyFrame = polars.scan_parquet(args.input_parquet_file)
+    #print(f"\nPolars datasource: local Parquet file, \"{args.input_parquet_file}\"")
+    #source_lazyframe: polars.LazyFrame = polars.scan_parquet(args.input_parquet_file)
+
+    print("\nOpening Polars datasource...")
+
+    # Let's try some Iceberg magic
+    current_iceberg_schema_uri: str = iceberg_table.current_metadata_file_s3_uri(
+        args.b2_access_key,
+        args.b2_secret_access_key,
+        args.s3_endpoint,
+        args.bucket_name,
+        args.table_path
+    )
+
+    base_filename: str = pathlib.Path(current_iceberg_schema_uri).name
+
+    print(f"\tCurrent Backblaze Drive Stats Iceberg schema file: {base_filename}")
+    print(f"\t\tSchema URI: {current_iceberg_schema_uri}")
+
+    source_lazyframe: polars.LazyFrame = polars.scan_iceberg(current_iceberg_schema_uri)
+
     return source_lazyframe
 
 
