@@ -8,9 +8,9 @@
 
 Candidate AWS EC2 instances (just helpful references, runs fine anywhere):
 
-* c8g.8xlarge (16 CPU, 64 GB): 40 seconds
-* m4g.4xlarge (8 CPU, 64 GB): 60 seconds
-* r8g.2xlarge (4 CPU, 64 GB): 90 seconds
+* **c8g.8xlarge** (16 CPU, 64 GB): 40 seconds
+* **m4g.4xlarge** (8 CPU, 64 GB): 60 seconds
+* **r8g.2xlarge** (4 CPU, 64 GB): 90 seconds
 
 Runtime tests were done from AWS `us-west-1` region as `us-west-1` has the lowest latency to the Backblaze 
 region `us-west-004` where the Backblaze B2 bucket hosting the drive stats data residess.
