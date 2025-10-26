@@ -73,21 +73,19 @@ This section demonstrates the effects of various amounts of CPU and RAM
 resources when running this script.
 
 I _happened_ to test on AWS EC2 instances as it was convenient, but to be clear, 
-the script runs fine on anything with:
-* Python 3.x
+the script runs fine on anything with the following three things:
+* a Python 3.x intepreter
 * 32+ GB of memory
 * Network access
 
-I've tested on multiple architectures (both x86-64 amd ARM64) because, well, why not?
+I've even tested on multiple architectures (both x86-64 amd ARM64) because, well, 
+why not?
 
-* **c7i.metal-48xl** (96C/192T CPU, 256 GB memory): **x.x minutes**
-* **c7i.48xlarge** (96C/192T CPU, 256 GB memory): **x.x minutes**
-* **c7i.metal-24xl** (48C/96T CPU, 256 GB memory): **x.x minutes**
-* **c7i.24xlarge** (48C/96T CPU, 256 GB memory): **x.x minutes**
-* **c7i.16xlarge** (32C/64T CPU, 128 GB memory): **x.x minutes**
-* **c7i.12xlarge** (24C/48T CPU, 96 GB memory): **x.x minutes**
-* **m7i.8xlarge** (16C/32T CPU, 128 GB memory): **x.x minutes**
-* **c7i.8xlarge** (16C/32T CPU, 64 GB memory): 3.0 minutes
+* **c7i.24xlarge** (48C/96T CPU, 192 GB memory): 2.3 minutes
+* **c7i.16xlarge** (32C/64T CPU, 160 GB memory): 2.5 minutes
+* **c7i.12xlarge** (24C/48T CPU, 128 GB memory): 2.6 minutes
+* **m7i.8xlarge** (16C/32T CPU, 128 GB memory): 3.1 minutes
+* **c7i.8xlarge** (16C/32T CPU, 64 GB memory): 3.1 minutes
 * **m7i.4xlarge** (8C/16T CPU, 64 GB memory): 4.4 minutes
 * **c7i.4xlarge** (8C/16T CPU, 32 GB memory): 5.3 minutes
 * **m7i.2xlarge** (4C/8T CPU, 32 GB memory): 8.6 minutes
