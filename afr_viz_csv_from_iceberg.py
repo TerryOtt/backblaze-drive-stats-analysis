@@ -14,13 +14,6 @@ def _parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser: argparse.ArgumentParser = argparse.ArgumentParser(description="Create quarterly AFR visualization CSV")
 
-    # Back off max CPU count as we have stats worker process pegging a CPU and then leave one for
-    #   background/OS
-    parquet_max_batch_size_default: int = 16 * 1024
-    parser.add_argument('--max-batch', help="Max size of Polars record batch, " +
-                                                         f"default: {parquet_max_batch_size_default:,}",
-                        type=int, default=parquet_max_batch_size_default)
-
     default_min_drives: int = 2_000
     parser.add_argument('--min-drives', help="Minimum number of deployed drives for model, default: " +
                         f"{default_min_drives:,}",
@@ -141,130 +134,120 @@ def _source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
     return source_lazyframe
 
 
-def _get_deploy_counts_with_min_drive_count_filter(args: argparse.Namespace,
-                                                   original_source_lazyframe: polars.LazyFrame,
-                                                   smart_model_name_mappings_dataframe: polars.DataFrame
-    ) -> polars.DataFrame:
-
-    print("\nETL pipeline stage 3 / 6: Retrieve deploy counts for drive models...")
-
-    print("\tRetrieving drive deployment counts from Polars...")
-    operation_start: float = time.perf_counter()
-
-    # Oh my SQL of death
-    drive_model_deploy_count_dataframe: polars.DataFrame = original_source_lazyframe.select(
-        "model", "serial_number"
-        ).unique().filter(
-            polars.col("model").is_in(
-                smart_model_name_mappings_dataframe.get_column("drive_model_name_smart").to_list()
-            )
-        ).join(smart_model_name_mappings_dataframe.lazy(),
-           left_on="model",
-           right_on="drive_model_name_smart"
-        ).select(
-            "drive_model_name_normalized", "serial_number"
-        ).group_by(
-            "drive_model_name_normalized"
-        ).agg(
-            [
-                polars.col("serial_number").count().alias("drives_deployed"),
-            ]
-        ).select(
-            "drive_model_name_normalized", "drives_deployed"
-        ).filter(
-            polars.col("drives_deployed").ge(args.min_drives)
-        ).sort(
-            "drive_model_name_normalized"
-        ).collect()
-
-    operation_duration: float = time.perf_counter() - operation_start
-    print( f"\t\tRetrieved drive deploy counts for {len(drive_model_deploy_count_dataframe):,} candidate drive models "
-           f"in {operation_duration:.01f} seconds\n")
-
-    #print(drive_model_deploy_count_dataframe)
-
-    # How many candidate normalized drive model names did we start with?
-    candidate_drive_models_count: int = smart_model_name_mappings_dataframe.get_column(
-        "drive_model_name_normalized").unique().len()
-
-    if len(drive_model_deploy_count_dataframe) < candidate_drive_models_count:
-        print(f"\tINFO: {candidate_drive_models_count - len(drive_model_deploy_count_dataframe):,} candidate "
-              f"drive models were filtered out due to drive counts < {args.min_drives:,} "
-              "\n\t\t(modify with --min-drives)" )
-
-    return drive_model_deploy_count_dataframe
-
-
-def _get_afr_input_data(args: argparse.Namespace,
-                        source_lazyframe: polars.LazyFrame,
-                        smart_model_name_mappings_dataframe: polars.DataFrame) -> dict[str, dict[str, dict[str, int]]]:
-
-    afr_input_data: dict[str, dict[str, dict[str, int]]] = {}
-    rows_retrieved: int = 0
-    month_quarter_lookup_table: dict[int, int] = _get_month_quarter_lookup_table()
-
-    print(f"\tReading incremental results batches, max rows per batch = {args.max_batch:,} "
-          "(modify with --max-batch)")
-
-    for curr_batch_df in source_lazyframe.select(
-            "date", "model", "failure"
-        ).filter(
-            polars.col("model").is_in(smart_model_name_mappings_dataframe.get_column(
-                "drive_model_name_smart").to_list()
-            )
-        ).join( smart_model_name_mappings_dataframe.lazy(),
-                left_on="model",
-                right_on="drive_model_name_smart"
-        ).select("drive_model_name_normalized", "date", "failure").group_by("drive_model_name_normalized", "date").agg(
-            [
-                polars.col("failure").count().alias("drives_seen"),
-                polars.col("failure").sum().alias("failure_count"),
-            ]
-        ).sort("drive_model_name_normalized", "date").collect_batches(chunk_size=args.max_batch):
-
-        rows_retrieved += len(curr_batch_df)
-
-        for curr_row in curr_batch_df.iter_rows(named=True):
-            if curr_row["drive_model_name_normalized"] not in afr_input_data:
-                afr_input_data[curr_row["drive_model_name_normalized"]]: dict[str, dict[str, int]] = {}
-
-            year_quarter: str = f"{curr_row["date"].year} Q{month_quarter_lookup_table[curr_row["date"].month]}"
-            if year_quarter not in afr_input_data[curr_row["drive_model_name_normalized"]]:
-                afr_input_data[curr_row["drive_model_name_normalized"]][year_quarter]: dict[str, int] = {
-                    "drive_days": 0,
-                    "failure_count": 0,
-                }
-
-            this_entry: dict[str, int] = afr_input_data[curr_row["drive_model_name_normalized"]][year_quarter]
-            this_entry["drive_days"] += curr_row["drives_seen"]
-            this_entry["failure_count"] += curr_row["failure_count"]
-
-    print(f"\tRetrieved {rows_retrieved:,} rows of drive health data from Polars")
-
-    return afr_input_data
+# def _get_afr_input_data(args: argparse.Namespace,
+#                         source_lazyframe: polars.LazyFrame,
+#                         smart_model_name_mappings_dataframe: polars.DataFrame) -> dict[str, dict[str, dict[str, int]]]:
+#
+#     afr_input_data: dict[str, dict[str, dict[str, int]]] = {}
+#     rows_retrieved: int = 0
+#     month_quarter_lookup_table: dict[int, int] = _get_month_quarter_lookup_table()
+#
+#     print(f"\tReading incremental results batches, max rows per batch = {args.max_batch:,} "
+#           "(modify with --max-batch)")
+#
+#     for curr_batch_df in source_lazyframe.select(
+#             "date", "model", "failure"
+#         ).filter(
+#             polars.col("model").is_in(smart_model_name_mappings_dataframe.get_column(
+#                 "drive_model_name_smart").to_list()
+#             )
+#         ).join( smart_model_name_mappings_dataframe.lazy(),
+#                 left_on="model",
+#                 right_on="drive_model_name_smart"
+#         ).select("drive_model_name_normalized", "date", "failure").group_by("drive_model_name_normalized", "date").agg(
+#             [
+#                 polars.col("failure").count().alias("drives_seen"),
+#                 polars.col("failure").sum().alias("failure_count"),
+#             ]
+#         ).sort("drive_model_name_normalized", "date").collect_batches(chunk_size=args.max_batch):
+#
+#         rows_retrieved += len(curr_batch_df)
+#
+#         for curr_row in curr_batch_df.iter_rows(named=True):
+#             if curr_row["drive_model_name_normalized"] not in afr_input_data:
+#                 afr_input_data[curr_row["drive_model_name_normalized"]]: dict[str, dict[str, int]] = {}
+#
+#             year_quarter: str = f"{curr_row["date"].year} Q{month_quarter_lookup_table[curr_row["date"].month]}"
+#             if year_quarter not in afr_input_data[curr_row["drive_model_name_normalized"]]:
+#                 afr_input_data[curr_row["drive_model_name_normalized"]][year_quarter]: dict[str, int] = {
+#                     "drive_days": 0,
+#                     "failure_count": 0,
+#                 }
+#
+#             this_entry: dict[str, int] = afr_input_data[curr_row["drive_model_name_normalized"]][year_quarter]
+#             this_entry["drive_days"] += curr_row["drives_seen"]
+#             this_entry["failure_count"] += curr_row["failure_count"]
+#
+#     print(f"\tRetrieved {rows_retrieved:,} rows of drive health data from Polars")
+#
+#     return afr_input_data
 
 
 def _get_afr_stats( args: argparse.Namespace,
                     source_lazyframe: polars.LazyFrame,
                     smart_model_name_mappings_dataframe: polars.DataFrame ) -> dict[str, dict[str, float]]:
 
-    print("\nETL pipeline stage 4 / 6: Retrieve AFR calculation input data...")
-    print(f"\tRetrieving daily drive health data from Polars for "
-          f"{smart_model_name_mappings_dataframe.get_column("drive_model_name_normalized").unique().len():,} "
-          "drive models...")
+    print("\nETL pipeline stage 4 / 6: Calculate AFR...")
+
+    # Iterate over all normalized names
+    normalized_drive_models: list[str] = smart_model_name_mappings_dataframe.get_column(
+        "drive_model_name_normalized").unique().sort().to_list()
+
+    norm_drive_model_count: int = len(normalized_drive_models)
+    print(f"\tRetrieving daily drive health data from Polars for {norm_drive_model_count:,} drive models...")
 
     operation_start: float = time.perf_counter()
-    quarterly_afr_input_data: dict[str, dict[str, dict[str, int]]] = _get_afr_input_data(
-        args, source_lazyframe, smart_model_name_mappings_dataframe)
+
+    for model_idx, curr_norm_drive_model in enumerate(normalized_drive_models):
+        print(f"\t\tDrive model {model_idx + 1:2d} of {norm_drive_model_count:2d}: \"{curr_norm_drive_model}\"")
+
+        drive_models_smart_names: list[str] = smart_model_name_mappings_dataframe.filter(
+                polars.col("drive_model_name_normalized").eq(curr_norm_drive_model)
+            ).get_column(
+                "drive_model_name_smart"
+            ).sort().to_list()
+
+        # print(f"\t\t\tSMART drive model names: {json.dumps(drive_models_smart_names)}")
+
+        # Get all daily drive health entries for this model
+        drive_model_health_dataframe: polars.DataFrame = source_lazyframe.select(
+            "date",
+            "model",
+            "serial_number",
+            "failure",
+
+        # Limit to SMART models for current normalized name
+        ).filter(
+            polars.col("model").is_in(drive_models_smart_names)
+
+        # Remove SMART model name column now that we're done filtering on it
+        ).select(
+            "date",
+            "serial_number",
+            "failure",
+
+        # Let's gooooooooo0
+        ).collect()
+
+        print(f"\t\t\tGot {len(drive_model_health_dataframe):,} rows of health data from Polars")
+
+        # Explicitly signal this memory is eligible for garbage collection
+        del drive_model_health_dataframe
+
+    # operation_start: float = time.perf_counter()
+    # quarterly_afr_input_data: dict[str, dict[str, dict[str, int]]] = _get_afr_input_data(
+    #     args, source_lazyframe, smart_model_name_mappings_dataframe)
     operation_duration: float = time.perf_counter() - operation_start
-    print(f"\tRetrieved drive health data in {operation_duration:.01f} seconds")
+    print(f"\tComputed quarterly AFR for {norm_drive_model_count:,} drive models in "
+          f"{operation_duration:.01f} seconds")
+    #
+    # # print(json.dumps(quarterly_afr_input_data, indent=4, sort_keys=True))
+    #
+    # print("\nETL pipeline stage 5 / 6: Perform AFR calculations...")
+    # afr_stats: dict[str, dict[str, float]] = _do_quarterly_afr_calcs_for_all_drives(quarterly_afr_input_data)
+    # print("\tQuarterly AFR calculations completed")
 
-    # print(json.dumps(quarterly_afr_input_data, indent=4, sort_keys=True))
-
-    print("\nETL pipeline stage 5 / 6: Perform AFR calculations...")
-    afr_stats: dict[str, dict[str, float]] = _do_quarterly_afr_calcs_for_all_drives(quarterly_afr_input_data)
-    print("\tQuarterly AFR calculations completed")
-
+    afr_stats: dict[str, dict[str, float]] = {}
     return afr_stats
 
 
@@ -378,16 +361,6 @@ def _get_smart_drive_model_names(args: argparse.Namespace,
     return drive_models_smart_series
 
 
-def _truncate_drive_model_name_mapping_dataframe(smart_model_name_mappings_dataframe: polars.DataFrame,
-                                                 drive_deploy_count_df: polars.DataFrame ) -> polars.DataFrame:
-
-    truncated_model_name_mappings_dataframe: polars.DataFrame = smart_model_name_mappings_dataframe.join(
-        drive_deploy_count_df, on="drive_model_name_normalized" ).select( "drive_model_name_normalized",
-        "drive_model_name_smart").sort( "drive_model_name_normalized", "drive_model_name_smart")
-
-    return truncated_model_name_mappings_dataframe
-
-
 def _generate_output_csv(args: argparse.Namespace,
                           computed_afr_data: dict[str, dict[str, float]],
                          drive_deploy_count_dataframe: polars.DataFrame ) -> None:
@@ -473,22 +446,12 @@ def _main() -> None:
     # Can delete SMART drive model name series as its no longer used
     del smart_drive_model_names
 
-    #print(json.dumps(drive_model_mapping, indent=4, sort_keys=True))
-    drive_deploy_count_dataframe: polars.DataFrame = _get_deploy_counts_with_min_drive_count_filter(
-        args, original_source_lazyframe, smart_model_name_mappings_dataframe )
-
-    # Remove all rows from name mappings dataframe that got filtered out due to being below min drive counts
-    smart_model_name_mappings_dataframe: polars.DataFrame = _truncate_drive_model_name_mapping_dataframe(
-        smart_model_name_mappings_dataframe, drive_deploy_count_dataframe )
-
-    # print(smart_model_name_mappings_dataframe)
-
     drive_model_quarterly_afr_stats: dict[str, dict[str, float]] = _get_afr_stats(
         args, original_source_lazyframe, smart_model_name_mappings_dataframe )
     # print( "\nDrive quarterly AFR data:\n" + json.dumps(drive_model_quarterly_afr_stats, indent=4, sort_keys=True) )
 
-    _generate_output_csv(args, drive_model_quarterly_afr_stats, drive_deploy_count_dataframe)
-
+    # _generate_output_csv(args, drive_model_quarterly_afr_stats, drive_deploy_count_dataframe)
+    #
     processing_duration: float = time.perf_counter() - processing_start
     print(f"\nETL pipeline total processing time: {processing_duration:.01f} seconds\n")
 
