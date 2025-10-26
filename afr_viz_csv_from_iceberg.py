@@ -261,27 +261,31 @@ def _get_afr_stats( args: argparse.Namespace,
         print(f"\t\t\tMin date: {drive_model_date_min.isoformat()}, max date: {drive_model_date_max.isoformat()}")
 
         # Walk data by quarter
-        if drive_model_date_min.month >= 9:
+        if drive_model_date_min.month >= 10:
             quarter_end_date: datetime.date = datetime.date(drive_model_date_min.year + 1, 1, 1 )
             quarter_start_date: datetime.date = datetime.date(drive_model_date_min.year, 10, 1)
         else:
-            if drive_model_date_min.month >= 6:
+            if drive_model_date_min.month >= 7:
                 quarter_end_date: datetime.date = datetime.date(drive_model_date_min.year, 10, 1)
-            elif drive_model_date_min.month >= 3:
+            elif drive_model_date_min.month >= 4:
                 quarter_end_date: datetime.date = datetime.date(drive_model_date_min.year, 7, 1)
             else:
                 quarter_end_date: datetime.date = datetime.date(drive_model_date_min.year, 4, 1)
 
-            quarter_start_date: datetime.date = datetime.date(drive_model_date_min.year,
-                                                              drive_model_date_min.month - 3,
+            quarter_start_date: datetime.date = datetime.date(quarter_end_date.year,
+                                                              quarter_end_date.month - 3,
                                                               1)
 
-        # Back down end date by one day
+        # Back down end date by one day to get last day of previous month which is what we want
         quarter_end_date -= datetime.timedelta(days=1)
 
         while quarter_end_date <= drive_model_date_max:
             print(f"\t\t\tQuarter: {quarter_start_date.isoformat()} - {quarter_end_date.isoformat()}")
-            # Increment start & end dates
+
+            # Do we have enough deployed drives this quarter to make a data entry?
+
+
+            # Increment start & end dates to make progress towards completion
             quarter_start_date, quarter_end_date = _increment_time_window(quarter_start_date, quarter_end_date)
 
         # Explicitly signal this memory is eligible for garbage collection
