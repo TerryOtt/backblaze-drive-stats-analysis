@@ -1,5 +1,6 @@
 import argparse
 import csv
+import datetime
 import json
 import pathlib
 
@@ -183,6 +184,27 @@ def _source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
 #     return afr_input_data
 
 
+def _increment_datetime_one_quarter(dt: datetime.date) -> datetime.date:
+    incremented_year: int
+    incremented_month: int = dt.month + 3
+    if incremented_month > 12:
+        incremented_month -= 12
+        incremented_year = dt.year + 1
+    else:
+        incremented_year = dt.year
+
+    return datetime.date(incremented_year, incremented_month, 1)
+
+
+def _increment_time_window(quarter_start_date: datetime.date,
+                           quarter_end_date: datetime.date) -> tuple[datetime.date, datetime.date]:
+    return (_increment_datetime_one_quarter(quarter_start_date),
+
+            # Do some cute single day shifting to get proper end of quarter as days/month isn't fixed
+            _increment_datetime_one_quarter(quarter_end_date + datetime.timedelta(days=1)) -
+            datetime.timedelta(days=1) )
+
+
 def _get_afr_stats( args: argparse.Namespace,
                     source_lazyframe: polars.LazyFrame,
                     smart_model_name_mappings_dataframe: polars.DataFrame ) -> dict[str, dict[str, float]]:
@@ -229,10 +251,43 @@ def _get_afr_stats( args: argparse.Namespace,
         # Let's gooooooooo0
         ).collect()
 
-        print(f"\t\t\tGot {len(drive_model_health_dataframe):,} rows of health data from Polars")
+        print(f"\t\t\tGot {len(drive_model_health_dataframe):,} rows of drive model health data from Polars")
+
+        # Find min and max date from data
+        drive_model_dates: polars.Series = drive_model_health_dataframe.get_column("date")
+        drive_model_date_min: datetime.date = drive_model_dates.min()
+        drive_model_date_max: datetime.date = drive_model_dates.max()
+
+        print(f"\t\t\tMin date: {drive_model_date_min.isoformat()}, max date: {drive_model_date_max.isoformat()}")
+
+        # Walk data by quarter
+        if drive_model_date_min.month >= 9:
+            quarter_end_date: datetime.date = datetime.date(drive_model_date_min.year + 1, 1, 1 )
+            quarter_start_date: datetime.date = datetime.date(drive_model_date_min.year, 10, 1)
+        else:
+            if drive_model_date_min.month >= 6:
+                quarter_end_date: datetime.date = datetime.date(drive_model_date_min.year, 10, 1)
+            elif drive_model_date_min.month >= 3:
+                quarter_end_date: datetime.date = datetime.date(drive_model_date_min.year, 7, 1)
+            else:
+                quarter_end_date: datetime.date = datetime.date(drive_model_date_min.year, 4, 1)
+
+            quarter_start_date: datetime.date = datetime.date(drive_model_date_min.year,
+                                                              drive_model_date_min.month - 3,
+                                                              1)
+
+        # Back down end date by one day
+        quarter_end_date -= datetime.timedelta(days=1)
+
+        while quarter_end_date <= drive_model_date_max:
+            print(f"\t\t\tQuarter: {quarter_start_date.isoformat()} - {quarter_end_date.isoformat()}")
+            # Increment start & end dates
+            quarter_start_date, quarter_end_date = _increment_time_window(quarter_start_date, quarter_end_date)
 
         # Explicitly signal this memory is eligible for garbage collection
         del drive_model_health_dataframe
+
+        break
 
     # operation_start: float = time.perf_counter()
     # quarterly_afr_input_data: dict[str, dict[str, dict[str, int]]] = _get_afr_input_data(
