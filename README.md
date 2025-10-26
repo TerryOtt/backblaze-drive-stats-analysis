@@ -1,27 +1,17 @@
 # backblaze-drive-stats-analysis
 
-**Updated 2025-10-25**
+**Updated 2025-10-26**
 
 ## Creating Quarterly AFR CSV
 
-**NOTE**: 64 GB of memory is _required_, otherwise process will be killed by the OS due to memory exhaustion.
-
-Candidate AWS EC2 instances (just helpful references, the code will run on an ancient laptop as long as 
-it has at least 64 GB of memory):
-
-* **c7i.8xlarge** (16 CPU, 64 GB): 40 seconds
-* **m7i.4xlarge** (8 CPU, 64 GB): 60 seconds
-* **r7i.2xlarge** (4 CPU, 64 GB): 90 seconds
-
-Runtime tests were done from AWS `us-west-1` region as `us-west-1` has the lowest latency to the Backblaze 
-region `us-west-004` where the Backblaze B2 bucket hosting the drive stats data resides.
+**NOTE**: 32 GB of memory is _required_, otherwise the process will be killed by the OS due to memory exhaustion.
 
 To get the access key/secret access key for read-only access to the B2 bucket, visit 
 the [Backblaze source data site](https://www.backblaze.com/cloud-storage/resources/hard-drive-test-data)
 and search for the string "**Application Key**." 
 
 Both values are public because they only provide read-only access, but GitHub doesn't love seeing access keys committed to
-repositories. :)
+repositories, so it's left as an exercise for the reader.
 
 ```
 $ sudo apt-get update
@@ -69,7 +59,6 @@ ETL pipeline stage 6 / 6: Writing AFR data to visualization CSV...
 
 ETL pipeline total processing time: 67.8 seconds
 
-
 	
 $ ls -laF quarterly_afr_2025q3.csv 
 -rw-rw-r-- 1 ubuntu ubuntu 3326 Oct 20 20:39 quarterly_afr_2025q3.csv 
@@ -77,3 +66,32 @@ $ ls -laF quarterly_afr_2025q3.csv
 $ wc -l quarterly_afr_2025q3.csv 
 34 quarterly_afr_2025q3.csv 
 ```
+
+## Runtime Data
+
+This section demonstrates the effects of various amounts of CPU and RAM
+resources when running this script.
+
+I _happened_ to test on AWS EC2 instances as it was convenient, but to be clear, 
+the script runs fine on anything with:
+* Python 3.x
+* 32+ GB of memory
+* Network access
+
+I've tested on multiple architectures (both x86-64 amd ARM64) because, well, why not?
+
+* **c7i.metal-48xl** (96C/192T CPU, 256 GB memory): **x.x minutes**
+* **c7i.48xlarge** (96C/192T CPU, 256 GB memory): **x.x minutes**
+* **c7i.metal-24xl** (48C/96T CPU, 256 GB memory): **x.x minutes**
+* **c7i.24xlarge** (48C/96T CPU, 256 GB memory): **x.x minutes**
+* **c7i.16xlarge** (32C/64T CPU, 128 GB memory): **x.x minutes**
+* **c7i.12xlarge** (24C/48T CPU, 96 GB memory): **x.x minutes**
+* **m7i.8xlarge** (16C/32T CPU, 128 GB memory): **x.x minutes**
+* **c7i.8xlarge** (16C/32T CPU, 64 GB memory): 3.0 minutes
+* **m7i.4xlarge** (8C/16T CPU, 64 GB memory): 4.4 minutes
+* **c7i.4xlarge** (8C/16T CPU, 32 GB memory): 5.3 minutes
+* **m7i.2xlarge** (4C/8T CPU, 32 GB memory): 8.6 minutes
+* **r7i.xlarge** (2C/4T CPU, 32 GB memory): 14.0 minutes
+
+_Note_: runtime tests were performed in AWS's `us-west-1` region, as it has the lowest latency to 
+the Backblaze data.
