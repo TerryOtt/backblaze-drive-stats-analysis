@@ -82,7 +82,7 @@ I've even tested on multiple architectures (both x86-64 amd ARM64) because, well
 why not?
 
 * **c7i.24xlarge** (48C/96T CPU, 192 GB memory): 2.3 minutes
-* **c7i.16xlarge** (32C/64T CPU, 144 GB memory): 2.5 minutes
+* **c7i.16xlarge** (32C/64T CPU, 128 GB memory): 2.5 minutes
 * **c7i.12xlarge** (24C/48T CPU, 96 GB memory): 2.6 minutes
 * **m7i.8xlarge** (16C/32T CPU, 128 GB memory): 3.1 minutes
 * **c7i.8xlarge** (16C/32T CPU, 64 GB memory): 3.1 minutes
