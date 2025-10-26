@@ -81,15 +81,26 @@ the script runs fine on anything with the following three things:
 I've even tested on multiple architectures (both x86-64 amd ARM64) because, well, 
 why not?
 
+Pricing is `us-west-1` prices (USD) as of 2025-10-26
+
 * **c7i.24xlarge** (48C/96T CPU, 192 GB memory): 2.3 minutes
+  * 0.20 USD
 * **c7i.16xlarge** (32C/64T CPU, 128 GB memory): 2.5 minutes
+  * 0.15 USD
 * **c7i.12xlarge** (24C/48T CPU, 96 GB memory): 2.6 minutes
+  * 0.12 USD
 * **m7i.8xlarge** (16C/32T CPU, 128 GB memory): 3.1 minutes
+  * 0.09 USD
 * **c7i.8xlarge** (16C/32T CPU, 64 GB memory): 3.1 minutes
+  * 0.09 USD
 * **m7i.4xlarge** (8C/16T CPU, 64 GB memory): 4.4 minutes
+  * 0.07 USD
 * **c7i.4xlarge** (8C/16T CPU, 32 GB memory): 5.3 minutes
+  * 0.08 USD
 * **m7i.2xlarge** (4C/8T CPU, 32 GB memory): 8.6 minutes
+  * 0.06 USD
 * **r7i.xlarge** (2C/4T CPU, 32 GB memory): 14.0 minutes
+  * 0.07 USD
 
 _Note_: runtime tests were performed in AWS's `us-west-1` region, as it has the lowest latency to 
 the Backblaze data.
