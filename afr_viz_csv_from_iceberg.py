@@ -198,11 +198,14 @@ def _increment_datetime_one_quarter(dt: datetime.date) -> datetime.date:
 
 def _increment_time_window(quarter_start_date: datetime.date,
                            quarter_end_date: datetime.date) -> tuple[datetime.date, datetime.date]:
-    return (_increment_datetime_one_quarter(quarter_start_date),
 
-            # Do some cute single day shifting to get proper end of quarter as days/month isn't fixed
-            _increment_datetime_one_quarter(quarter_end_date + datetime.timedelta(days=1)) -
-            datetime.timedelta(days=1) )
+    # New start is one day past old end
+    window_start: datetime.date = quarter_end_date + datetime.timedelta(days=1)
+
+    # New end is new start plus three months and then minus one day
+    window_end: datetime.date = _increment_datetime_one_quarter(window_start) - datetime.timedelta(days=1)
+
+    return window_start, window_end
 
 
 def _get_afr_stats( args: argparse.Namespace,
