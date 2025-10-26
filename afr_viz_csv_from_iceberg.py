@@ -302,11 +302,11 @@ def _get_afr_stats( args: argparse.Namespace,
 
     operation_duration: float = time.perf_counter() - operation_start
     drive_models_with_afr: int = len(quarterly_afr_per_drive)
-    print(f"\n\tComputed quarterly AFR for {drive_models_with_afr:,} drive models in "
-          f"{operation_duration:.01f} seconds")
+    print(f"\n\tComputed quarterly AFR for {drive_models_with_afr:,} of {norm_drive_model_count:,} "
+          f"candidate drive models in {operation_duration:.01f} seconds")
 
     if drive_models_with_afr < norm_drive_model_count:
-        print(f"\t\t{norm_drive_model_count - drive_models_with_afr:,} drive models filtered out due to "
+        print(f"\t\t{norm_drive_model_count - drive_models_with_afr:,} candidate drive models filtered out due to "
             "insufficient drive deploy count")
 
     return quarterly_afr_per_drive
