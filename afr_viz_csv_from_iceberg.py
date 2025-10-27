@@ -2,7 +2,9 @@ import argparse
 import csv
 import datetime
 import json
+import multiprocessing
 import pathlib
+import typing
 
 import polars
 import re
@@ -156,6 +158,68 @@ def _increment_time_window(quarter_start_date: datetime.date,
     return window_start, window_end
 
 
+def _drive_model_afr_stats_worker( args                             : argparse.Namespace,
+                                   drive_model_name_normalized      : str,
+                                   batch_results_columns            : list[str],
+                                   normalized_name_lookup_table     : dict[str, str],
+                                   row_queue                        : multiprocessing.SimpleQueue,
+                                   completed_stats_queue            : multiprocessing.SimpleQueue ) -> None:
+
+    drive_afr_data: dict[str, dict[str, int | set[str]]] = {}
+    quarter_lookup_table: dict[int, int] = _get_month_quarter_lookup_table()
+
+    # print(f"\t\tWorker for drive model \"{drive_model_name_normalized}\" started")
+
+    while True:
+        queue_data: tuple[typing.Any, ...] | None = row_queue.get()
+
+        if queue_data is None:
+            break
+
+        # Ignore data and just see how fast we can read
+        del queue_data
+        continue
+
+        # Got real data
+        curr_results_batch_row: tuple[typing.Any, ...] = queue_data
+        del queue_data
+
+        curr_row_values: dict[str, datetime.date | str | int] = {}
+
+        # Populate dict with values for this data row
+        for col_index, curr_column_name in enumerate(batch_results_columns):
+            curr_row_values[curr_column_name] = curr_results_batch_row[col_index]
+        curr_row_values['drive_model_name_normalized'] = normalized_name_lookup_table[curr_row_values['model']]
+        curr_row_values['year_quarter'] = f"{curr_row_values['date'].year} " + \
+                                          f"Q{quarter_lookup_table[curr_row_values['date'].month]}"
+
+        # Start populating AFR calc input data with this row's data
+
+        if curr_row_values['year_quarter'] not in drive_afr_data:
+            drive_afr_data[curr_row_values['year_quarter']] = {
+                'drive_days': 0,
+                'failure_count': 0,
+                'serial_numbers_seen': set(),
+            }
+
+        drive_quarter_afr_data: dict[str, int | set[str]] = drive_afr_data[curr_row_values['year_quarter']]
+
+        # Did we find a new serial number?
+        if curr_row_values['serial_number'] not in drive_quarter_afr_data['serial_numbers_seen']:
+            drive_quarter_afr_data['serial_numbers_seen'].add(curr_row_values['serial_number'])
+
+        # Update AFR calc data
+        drive_quarter_afr_data['drive_days'] += 1
+        drive_quarter_afr_data['failure_count'] += curr_row_values['failure']
+
+        del curr_results_batch_row
+
+    # Ship the computed stats back to parent and close queue to signal no more writing
+    completed_stats_queue.put( (drive_model_name_normalized, drive_afr_data) )
+    completed_stats_queue.close()
+    # print(f"\t\tWorker for {drive_model_name_normalized} completed")
+
+
 def _get_afr_stats( args: argparse.Namespace,
                     source_lazyframe: polars.LazyFrame,
                     smart_model_name_mappings_dataframe: polars.DataFrame ) -> dict[str, list[dict[str, float|int]]]:
@@ -187,20 +251,17 @@ def _get_afr_stats( args: argparse.Namespace,
                 "drive_model_name_smart"
             ).sort().to_list()
 
+        # TODO: we can do walk across drive rows for 34 drives in 160 seconds
+        #       let's get min/max date separate, do a quarter walk, and pull quarter of data
+        #       at a tim eto see if it's faster
+
         # print(f"\t\t\tSMART drive model names: {json.dumps(drive_models_smart_names)}")
 
         # Get all daily drive health entries for this model
-        drive_model_health_dataframe: polars.DataFrame = source_lazyframe.select(
-            "date",
-            "model",
-            "serial_number",
-            "failure",
-
-        # Limit to SMART models for current normalized name
-        ).filter(
+        drive_model_health_dataframe: polars.DataFrame = source_lazyframe.filter(
             polars.col("model").is_in(drive_models_smart_names)
 
-        # Remove SMART model name column now that we're done filtering on it
+        # Reduce to columns we need
         ).select(
             "date",
             "serial_number",
@@ -390,9 +451,11 @@ def _get_smart_drive_model_names(args: argparse.Namespace,
     # We want all unique drive model names found in the source file which match one of the drive model regexes
     operation_start: float = time.perf_counter()
     print("\tRetrieving unique candidate SMART drive model names from Polars...")
-    drive_models_smart_series: polars.Series = original_source_lazyframe.select("model").unique().filter(
+    drive_models_smart_series: polars.Series = original_source_lazyframe.filter(
         polars.col("model").str.contains(multi_regex_pattern)
-    ).sort("model").collect().to_series().rename("drive_model_name_smart")
+    ).select(
+        "model"
+    ).collect().get_column("model").unique().sort().rename("drive_model_name_smart")
     operation_end: float = time.perf_counter()
     operation_duration: float = operation_end - operation_start
 
@@ -499,4 +562,10 @@ def _main() -> None:
 
 
 if __name__ == "__main__":
+
+    # Not sure why this needs to be done in main context but that's what they say
+    #   Using spawn even though it's more expensive as to not inherit the memory space
+    #       of the parent that is taking up 24 GB oe memory
+    multiprocessing.set_start_method('spawn')
+
     _main()
