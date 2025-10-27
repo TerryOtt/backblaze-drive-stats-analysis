@@ -158,68 +158,6 @@ def _increment_time_window(quarter_start_date: datetime.date,
     return window_start, window_end
 
 
-def _drive_model_afr_stats_worker( args                             : argparse.Namespace,
-                                   drive_model_name_normalized      : str,
-                                   batch_results_columns            : list[str],
-                                   normalized_name_lookup_table     : dict[str, str],
-                                   row_queue                        : multiprocessing.SimpleQueue,
-                                   completed_stats_queue            : multiprocessing.SimpleQueue ) -> None:
-
-    drive_afr_data: dict[str, dict[str, int | set[str]]] = {}
-    quarter_lookup_table: dict[int, int] = _get_month_quarter_lookup_table()
-
-    # print(f"\t\tWorker for drive model \"{drive_model_name_normalized}\" started")
-
-    while True:
-        queue_data: tuple[typing.Any, ...] | None = row_queue.get()
-
-        if queue_data is None:
-            break
-
-        # Ignore data and just see how fast we can read
-        del queue_data
-        continue
-
-        # Got real data
-        curr_results_batch_row: tuple[typing.Any, ...] = queue_data
-        del queue_data
-
-        curr_row_values: dict[str, datetime.date | str | int] = {}
-
-        # Populate dict with values for this data row
-        for col_index, curr_column_name in enumerate(batch_results_columns):
-            curr_row_values[curr_column_name] = curr_results_batch_row[col_index]
-        curr_row_values['drive_model_name_normalized'] = normalized_name_lookup_table[curr_row_values['model']]
-        curr_row_values['year_quarter'] = f"{curr_row_values['date'].year} " + \
-                                          f"Q{quarter_lookup_table[curr_row_values['date'].month]}"
-
-        # Start populating AFR calc input data with this row's data
-
-        if curr_row_values['year_quarter'] not in drive_afr_data:
-            drive_afr_data[curr_row_values['year_quarter']] = {
-                'drive_days': 0,
-                'failure_count': 0,
-                'serial_numbers_seen': set(),
-            }
-
-        drive_quarter_afr_data: dict[str, int | set[str]] = drive_afr_data[curr_row_values['year_quarter']]
-
-        # Did we find a new serial number?
-        if curr_row_values['serial_number'] not in drive_quarter_afr_data['serial_numbers_seen']:
-            drive_quarter_afr_data['serial_numbers_seen'].add(curr_row_values['serial_number'])
-
-        # Update AFR calc data
-        drive_quarter_afr_data['drive_days'] += 1
-        drive_quarter_afr_data['failure_count'] += curr_row_values['failure']
-
-        del curr_results_batch_row
-
-    # Ship the computed stats back to parent and close queue to signal no more writing
-    completed_stats_queue.put( (drive_model_name_normalized, drive_afr_data) )
-    completed_stats_queue.close()
-    # print(f"\t\tWorker for {drive_model_name_normalized} completed")
-
-
 def _get_afr_stats( args: argparse.Namespace,
                     source_lazyframe: polars.LazyFrame,
                     smart_model_name_mappings_dataframe: polars.DataFrame ) -> dict[str, list[dict[str, float|int]]]:
