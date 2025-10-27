@@ -4,8 +4,6 @@ import datetime
 import json
 import multiprocessing
 import pathlib
-import typing
-
 import polars
 import re
 import time
@@ -136,9 +134,8 @@ def _source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
 
 def _increment_datetime_one_quarter(dt: datetime.date) -> datetime.date:
     incremented_year: int
-    incremented_month: int = dt.month + 3
-    if incremented_month > 12:
-        incremented_month -= 12
+    incremented_month: int = (dt.month + 3) % 12
+    if incremented_month == 1:
         incremented_year = dt.year + 1
     else:
         incremented_year = dt.year
@@ -146,19 +143,7 @@ def _increment_datetime_one_quarter(dt: datetime.date) -> datetime.date:
     return datetime.date(incremented_year, incremented_month, 1)
 
 
-def _increment_time_window(quarter_start_date: datetime.date,
-                           quarter_end_date: datetime.date) -> tuple[datetime.date, datetime.date]:
-
-    # New start is one day past old end
-    window_start: datetime.date = quarter_end_date + datetime.timedelta(days=1)
-
-    # New end is new start plus three months and then minus one day
-    window_end: datetime.date = _increment_datetime_one_quarter(window_start) - datetime.timedelta(days=1)
-
-    return window_start, window_end
-
-
-def _get_afr_stats( args: argparse.Namespace,
+def _compute_drive_quarterly_afrs( args: argparse.Namespace,
                     source_lazyframe: polars.LazyFrame,
                     smart_model_name_mappings_dataframe: polars.DataFrame ) -> dict[str, list[dict[str, float|int]]]:
 
@@ -175,13 +160,10 @@ def _get_afr_stats( args: argparse.Namespace,
 
     quarterly_afr_per_drive: dict[str, list[ dict[str, float | int]] ] = {}
 
-    quarter_lookup_table: dict[int, int] = _get_month_quarter_lookup_table()
-
     for model_idx, curr_norm_drive_model in enumerate(normalized_drive_models):
         print(f"\tCandidate drive model {model_idx + 1:2d} of {norm_drive_model_count:2d}: \"{curr_norm_drive_model}\"")
 
-
-        drive_data_pulls_start: float = time.perf_counter()
+        model_processing_start: float = time.perf_counter()
 
         drive_models_smart_names: list[str] = smart_model_name_mappings_dataframe.filter(
                 polars.col("drive_model_name_normalized").eq(curr_norm_drive_model)
@@ -189,112 +171,100 @@ def _get_afr_stats( args: argparse.Namespace,
                 "drive_model_name_smart"
             ).sort().to_list()
 
-        # TODO: we can do walk across drive rows for 34 drives in 160 seconds
-        #       let's get min/max date separate, do a quarter walk, and pull quarter of data
-        #       at a tim eto see if it's faster
-
         # print(f"\t\t\tSMART drive model names: {json.dumps(drive_models_smart_names)}")
 
-        # Get all daily drive health entries for this model
-        drive_model_health_dataframe: polars.DataFrame = source_lazyframe.filter(
+
+        # Pull all data rows for this drive
+        drive_model_health_rows: polars.DataFrame = source_lazyframe.filter(
             polars.col("model").is_in(drive_models_smart_names)
-
-        # Reduce to columns we need
         ).select(
-            "date",
-            "serial_number",
-            "failure",
-
-        # Let's gooooooooo
+            "date", "serial_number", "failure"
         ).collect()
 
-        drive_data_pulls_duration: float = time.perf_counter() - drive_data_pulls_start
+        drive_data_dates: dict[str, datetime.date] = {
+            'min': drive_model_health_rows.get_column("date").min(),
+            'max': drive_model_health_rows.get_column("date").max(),
+        }
 
-        print(f"\t\tPolars data queried for this candidate drive model in {drive_data_pulls_duration:.03f} seconds")
-
-        # print(f"\t\t\tGot {len(drive_model_health_dataframe):,} rows of drive model health data from Polars")
-
-        # Find min and max date from data
-        drive_model_dates: polars.Series = drive_model_health_dataframe.get_column("date")
-        drive_model_date_min: datetime.date = drive_model_dates.min()
-        drive_model_date_max: datetime.date = drive_model_dates.max()
-
-        # print(f"\t\t\tMin date: {drive_model_date_min.isoformat()}, max date: {drive_model_date_max.isoformat()}")
+        # print(f"\t\tMin date: {drive_data_dates['min'].isoformat()}")
 
         # Walk data by quarter
-        if drive_model_date_min.month >= 10:
-            quarter_end_date: datetime.date = datetime.date(drive_model_date_min.year + 1, 1, 1 )
-            quarter_start_date: datetime.date = datetime.date(drive_model_date_min.year, 10, 1)
+        quarter_start_year_month: dict[str, int] = {
+            "year": drive_data_dates['min'].year,
+        }
+        if drive_data_dates['min'].month >= 10:
+            quarter_start_year_month['month'] = 10
+        elif drive_data_dates['min'].month >= 7:
+            quarter_start_year_month['month'] = 7
+        elif drive_data_dates['min'].month >= 4:
+            quarter_start_year_month['month'] = 4
         else:
-            if drive_model_date_min.month >= 7:
-                quarter_end_date: datetime.date = datetime.date(drive_model_date_min.year, 10, 1)
-            elif drive_model_date_min.month >= 4:
-                quarter_end_date: datetime.date = datetime.date(drive_model_date_min.year, 7, 1)
-            else:
-                quarter_end_date: datetime.date = datetime.date(drive_model_date_min.year, 4, 1)
+            quarter_start_year_month['month'] = 1
 
-            quarter_start_date: datetime.date = datetime.date(quarter_end_date.year,
-                                                              quarter_end_date.month - 3,
-                                                              1)
-
-        # Back down end date by one day to get last day of previous month which is what we want
-        quarter_end_date -= datetime.timedelta(days=1)
+        quarter_start_date: datetime.date = datetime.date(quarter_start_year_month['year'],
+                                                          quarter_start_year_month['month'],
+                                                          1)
+        # print(f"\t\tInitial date start of walk: {quarter_start_date.isoformat()}")
 
         cumulative_drive_days: int = 0
         cumulative_drive_failures: int = 0
 
-        while quarter_end_date <= drive_model_date_max:
-            # Optimistically get all data rows this quarter
-            quarter_drive_health_rows: polars.DataFrame = drive_model_health_dataframe.filter(
-                polars.col("date").is_between(quarter_start_date, quarter_end_date, closed='both')
+        while quarter_start_date <= drive_data_dates['max']:
+            # print(f"\t\tProcessing quarter of data starting on {quarter_start_date.isoformat()}")
+
+            quarter_drive_data: polars.DataFrame = drive_model_health_rows.filter(
+                polars.col("date").dt.year().eq(quarter_start_date.year),
+                polars.col("date").dt.month().is_between(
+                    quarter_start_date.month,
+                    quarter_start_date.month + 3,
+                    # Can leave out closed, it defaults to inclusive on both ends
+                )
+            ).select(
+                polars.col('serial_number').unique().count().alias("unique_serial_numbers_seen"),
+                polars.col('failure').count().alias("quarter_drive_days"),
+                polars.col('failure').sum().alias("quarter_drive_failures"),
             )
 
-            # Do we have enough deployed drives this quarter to make a data entry?
-            quarter_drive_deploy_count: int = quarter_drive_health_rows.get_column(
-                'serial_number'
-            ).unique().len()
+            quarter_drive_deploy_count: int = quarter_drive_data.get_column("unique_serial_numbers_seen").item()
 
-            if quarter_drive_deploy_count >= args.min_drives:
-                # Turn date into quarter string
-                year_quarter: str = f"{quarter_start_date.year} " + \
-                                    f"Q{quarter_lookup_table[quarter_start_date.month]}"
-                # print(f"\t\t\tIncluding {year_quarter}" )
-                # print(f"\t\t\t\t{quarter_drive_deploy_count:7,} unique drives deployed this quarter")
+            if quarter_drive_deploy_count < args.min_drives:
+                quarter_start_date = _increment_datetime_one_quarter(quarter_start_date)
+                del quarter_drive_data
+                continue
+            # print(f"\t\tFound quarter with enough drives starting {quarter_start_date.isoformat()}")
 
-                # Drive days is just number of rows of drive health data we already pulled for this quarter
-                quarter_drive_days: int = len(quarter_drive_health_rows)
+            quarter_drive_days: int = quarter_drive_data.get_column("quarter_drive_days").item()
+            quarter_drive_failures: int = quarter_drive_data.get_column("quarter_drive_failures").item()
 
-                # Drives failed is sum of failure column
-                quarter_drives_failed: int = quarter_drive_health_rows.get_column('failure').sum()
+            # Do AFR calc
+            cumulative_drive_days += quarter_drive_days
+            cumulative_drive_failures += quarter_drive_failures
 
-                # Do AFR calc
-                cumulative_drive_days += quarter_drive_days
-                cumulative_drive_failures += quarter_drives_failed
+            afr_at_end_of_quarter: float = _afr_calc(cumulative_drive_days, cumulative_drive_failures)
 
-                afr_at_end_of_quarter: float = _afr_calc(cumulative_drive_days, cumulative_drive_failures)
+            if curr_norm_drive_model not in quarterly_afr_per_drive:
+                quarterly_afr_per_drive[curr_norm_drive_model]: list[dict[str, int | float]] = []
 
-                if curr_norm_drive_model not in quarterly_afr_per_drive:
-                    quarterly_afr_per_drive[curr_norm_drive_model]: list[dict[str, int | float]] = []
+            quarterly_entry: dict[ str, int | float ] = {
+                'quarter_start'     : quarter_start_date.isoformat(),
+                'drives_deployed'   : quarter_drive_deploy_count,
+                'afr'               : afr_at_end_of_quarter,
+            }
 
-                quarterly_entry: dict[ str, int | float ] = {
-                    'quarter'           : year_quarter,
-                    'drives_deployed'   : quarter_drive_deploy_count,
-                    'afr'               : afr_at_end_of_quarter,
-                }
-
-                quarterly_afr_per_drive[curr_norm_drive_model].append(quarterly_entry)
+            quarterly_afr_per_drive[curr_norm_drive_model].append(quarterly_entry)
 
             # Explicitly mark memory eligible for collection
-            del quarter_drive_health_rows
+            del quarter_drive_data
 
-            # Increment start & end dates to make progress towards completion
-            quarter_start_date, quarter_end_date = _increment_time_window(quarter_start_date, quarter_end_date)
+            quarter_start_date = _increment_datetime_one_quarter(quarter_start_date)
 
-        # Explicitly mark the memory with all data for this drive model is eligible for garbage collection
-        del drive_model_health_dataframe
+        model_processing_duration: float = time.perf_counter() - model_processing_start
+
+        del drive_model_health_rows
 
         if curr_norm_drive_model in quarterly_afr_per_drive:
-            print(f"\t\tAdded {len(quarterly_afr_per_drive[curr_norm_drive_model]):2d} quarters of AFR data")
+            print(f"\t\tCreated {len(quarterly_afr_per_drive[curr_norm_drive_model]):2d} quarters of AFR data "
+                  f"in {model_processing_duration:.01f} seconds")
         else:
             print("\t\tINFO: candidate drive model filtered out due to no quarters with >= "
                   f"{args.min_drives:,} drives deployed (modify with --min_drives)")
@@ -309,28 +279,6 @@ def _get_afr_stats( args: argparse.Namespace,
             "insufficient drive deploy count")
 
     return quarterly_afr_per_drive
-
-
-def _get_month_quarter_lookup_table() -> dict[int, int]:
-    month_quarter_lookup_table: dict[int, int] = {
-         1: 1,
-         2: 1,
-         3: 1,
-
-         4: 2,
-         5: 2,
-         6: 2,
-
-         7: 3,
-         8: 3,
-         9: 3,
-
-        10: 4,
-        11: 4,
-        12: 4,
-    }
-
-    return month_quarter_lookup_table
 
 
 def _afr_calc(cumulative_drive_days: int, cumulative_drive_failures: int) -> float:
@@ -489,9 +437,9 @@ def _main() -> None:
     # Can delete SMART drive model name series as its no longer used
     del smart_drive_model_names
 
-    drive_model_quarterly_afr_stats: dict[str, list[dict[str, float|int]]] = _get_afr_stats(
+    drive_model_quarterly_afr_stats: dict[str, list[dict[str, str | int]]] = _compute_drive_quarterly_afrs(
         args, original_source_lazyframe, smart_model_name_mappings_dataframe )
-    # print( "\nDrive quarterly AFR data:\n" + json.dumps(drive_model_quarterly_afr_stats, indent=4, sort_keys=True) )
+    print( "\nDrive quarterly AFR data:\n" + json.dumps(drive_model_quarterly_afr_stats, indent=4, sort_keys=True) )
 
     # _generate_output_csv(args, drive_model_quarterly_afr_stats, drive_deploy_count_dataframe)
     #
