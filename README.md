@@ -89,7 +89,7 @@ Tests were performed in AWS's `us-west-1` region, as it has the lowest latency t
 the Backblaze data. Per-minute `us-west-1` pricing (USD) is from 2025-10-28. 
 
 * **c7i.24xlarge** (48C/96T CPU, 192 GB memory): minutes
-  *  USD (0.8904 USD / minute)
+  *  USD (0.08904 USD / minute)
 * **c7i.16xlarge** (32C/64T CPU, 128 GB memory): minutes
   *  USD (0.05936 USD / minute)
 * **c7i.12xlarge** (24C/48T CPU, 96 GB memory): 4.4 minutes
