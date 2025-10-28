@@ -225,7 +225,6 @@ def _generate_output_csv(args: argparse.Namespace,
     ]
 
     max_quarters: int = 0
-    csv_columns_per_drive_model: dict[str, str] = {}
     for curr_drive_model in sorted(computed_afr_data):
         # Add a column for the drive, and then its drive count
         max_quarters = max(max_quarters, len(computed_afr_data[curr_drive_model]))
@@ -383,7 +382,7 @@ def _do_quarterly_afr_calculations(
         del quarterly_afr_data
 
         if curr_norm_drive_model in quarterly_afr_by_drive:
-                print(f"\t\tAdded AFR data for {len(quarterly_afr_by_drive[curr_norm_drive_model]):2d} quarters")
+                print(f"\t\tAdded {len(quarterly_afr_by_drive[curr_norm_drive_model]):2d} quarters of AFR")
         else:
             print("\t\tINFO: candidate drive model filtered out due to no quarters with >= "
                   f"{args.min_drives:,} drives deployed (modify with --min_drives)")
