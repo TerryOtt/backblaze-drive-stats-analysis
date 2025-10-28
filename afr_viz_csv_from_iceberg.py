@@ -2,7 +2,6 @@ import argparse
 import csv
 import datetime
 import json
-import multiprocessing
 import pathlib
 import polars
 import re
@@ -143,9 +142,10 @@ def _increment_datetime_one_quarter(dt: datetime.date) -> datetime.date:
     return datetime.date(incremented_year, incremented_month, 1)
 
 
-def _compute_drive_quarterly_afrs( args: argparse.Namespace,
-                    source_lazyframe: polars.LazyFrame,
-                    smart_model_name_mappings_dataframe: polars.DataFrame ) -> dict[str, list[dict[str, float|int]]]:
+def _compute_drive_quarterly_afrs(
+        args: argparse.Namespace,
+        source_lazyframe: polars.LazyFrame,
+        smart_model_name_mappings_dataframe: polars.DataFrame ) -> dict[str, list[dict[str, str | int | float]]]:
 
     print("\nETL pipeline stage 3 of 4: Calculate AFR...")
 
@@ -158,7 +158,7 @@ def _compute_drive_quarterly_afrs( args: argparse.Namespace,
 
     operation_start: float = time.perf_counter()
 
-    quarterly_afr_per_drive: dict[str, list[ dict[str, float | int]] ] = {}
+    quarterly_afr_per_drive: dict[str, list[dict[str, str | int | float]]] = {}
 
     for model_idx, curr_norm_drive_model in enumerate(normalized_drive_models):
         print(f"\tCandidate drive model {model_idx + 1:2d} of {norm_drive_model_count:2d}: \"{curr_norm_drive_model}\"")
@@ -227,10 +227,6 @@ def _compute_drive_quarterly_afrs( args: argparse.Namespace,
 
             quarter_drive_deploy_count: int = quarter_drive_data.get_column("unique_serial_numbers_seen").item()
 
-            if quarter_drive_deploy_count < args.min_drives:
-                quarter_start_date = _increment_datetime_one_quarter(quarter_start_date)
-                del quarter_drive_data
-                continue
             # print(f"\t\tFound quarter with enough drives starting {quarter_start_date.isoformat()}")
 
             quarter_drive_days: int = quarter_drive_data.get_column("quarter_drive_days").item()
@@ -239,6 +235,12 @@ def _compute_drive_quarterly_afrs( args: argparse.Namespace,
             # Do AFR calc
             cumulative_drive_days += quarter_drive_days
             cumulative_drive_failures += quarter_drive_failures
+
+            # Need to do the AFR calc but don't display the row if it has under min drives
+            if quarter_drive_deploy_count < args.min_drives:
+                quarter_start_date = _increment_datetime_one_quarter(quarter_start_date)
+                del quarter_drive_data
+                continue
 
             afr_at_end_of_quarter: float = _afr_calc(cumulative_drive_days, cumulative_drive_failures)
 
@@ -352,11 +354,34 @@ def _get_smart_drive_model_names(args: argparse.Namespace,
     return drive_models_smart_series
 
 
-def _generate_output_csv(args: argparse.Namespace,
-                          computed_afr_data: dict[str, dict[str, float]],
-                         drive_deploy_count_dataframe: polars.DataFrame ) -> None:
+def _main() -> None:
 
-    print("\nETL pipeline stage 4 of 4: Writing AFR data to visualization CSV...")
+    processing_start: float = time.perf_counter()
+
+    args: argparse.Namespace = _parse_args()
+    original_source_lazyframe: polars.LazyFrame = _source_lazyframe(args)
+
+    smart_drive_model_names: polars.Series = _get_smart_drive_model_names(args, original_source_lazyframe)
+
+    smart_model_name_mappings_dataframe: polars.DataFrame = _get_smart_drive_model_mappings(smart_drive_model_names)
+
+    # Can delete SMART drive model name series as its no longer used
+    del smart_drive_model_names
+
+    drive_model_quarterly_afr_stats: dict[str, list[dict[str, str | int | float]]] = _compute_drive_quarterly_afrs(
+        args, original_source_lazyframe, smart_model_name_mappings_dataframe )
+    # print( "\nDrive quarterly AFR data:\n" + json.dumps(drive_model_quarterly_afr_stats, indent=4, sort_keys=True) )
+
+    _generate_output_csv(args, drive_model_quarterly_afr_stats )
+
+    processing_duration: float = time.perf_counter() - processing_start
+    print(f"\nETL pipeline total processing time: {processing_duration:.01f} seconds\n")
+
+
+def _generate_output_csv(args: argparse.Namespace,
+                         computed_afr_data: dict[str, list[dict[str, str | int | float]]] ) -> None:
+
+    print("\nETL pipeline stage 4 of 4: Create visualization CSV...")
     print(f"\tCreating visualization CSV file \"{args.output_csv}\"")
 
     column_names: list[str] = [
@@ -367,27 +392,9 @@ def _generate_output_csv(args: argparse.Namespace,
     max_quarters: int = 0
     csv_columns_per_drive_model: dict[str, str] = {}
     for curr_drive_model in sorted(computed_afr_data):
-
-        # Get drives deployed for this drive model
-        drives_deployed: int = drive_deploy_count_dataframe.filter(
-            polars.col("drive_model_name_normalized").eq(curr_drive_model)
-        ).select( "drives_deployed" ).item()
-
-        model_and_drive_count: str = f"{curr_drive_model} ({drives_deployed:,})"
-
-        column_names.append(model_and_drive_count)
-        csv_columns_per_drive_model[curr_drive_model] = model_and_drive_count
+        # Add a column for the drive, and then its drive count
         max_quarters = max(max_quarters, len(computed_afr_data[curr_drive_model]))
-
-    # Create dict of lists of AFR values per drive model
-    human_readable_data: dict[str, list[float]] = {}
-    for curr_drive_model in sorted(computed_afr_data):
-        human_readable_data[curr_drive_model]: list[float] = []
-        for curr_qtr in sorted(computed_afr_data[curr_drive_model]):
-            human_readable_data[curr_drive_model].append(computed_afr_data[curr_drive_model][curr_qtr])
-
-    # Do not need computed AFR data anymore, make the memory eligible for garbage collection
-    del computed_afr_data
+        column_names.extend( [f"{curr_drive_model} AFR", f"{curr_drive_model} Deployed"] )
 
     with open(args.output_csv, "w", newline='') as output_csv:
         csv_writer = csv.DictWriter(output_csv, fieldnames=column_names)
@@ -413,45 +420,20 @@ def _generate_output_csv(args: argparse.Namespace,
             }
 
             # Iterate across all drives to see if they have AFR data for the current quarter
-            for curr_drive_model in human_readable_data:
-                # Is there still AFR data for this drive or have we consumed it all?
-                if human_readable_data[curr_drive_model]:
-                    curr_quarter_afr: float = human_readable_data[curr_drive_model].pop(0)
-                    data_row[csv_columns_per_drive_model[curr_drive_model]] = f"{curr_quarter_afr:.03f}"
+            for curr_drive_model in computed_afr_data:
+                # Do we have data for this drive or have we consumed it all?
+                if computed_afr_data[curr_drive_model]:
+                    curr_quarter_drive_data: dict[str, str | int | float ] = \
+                        computed_afr_data[curr_drive_model].pop(0)
+                    # Add quarterly AFR and deploy count for this drive
+                    data_row[f"{curr_drive_model} AFR"] = f"{curr_quarter_drive_data['afr']:.03f}"
+                    data_row[f"{curr_drive_model} Deployed"] = f"{curr_quarter_drive_data['drives_deployed']:,}"
 
             # print(json.dumps(data_row, indent=4, sort_keys=True))
             csv_writer.writerow(data_row)
 
-
-def _main() -> None:
-
-    processing_start: float = time.perf_counter()
-
-    args: argparse.Namespace = _parse_args()
-    original_source_lazyframe: polars.LazyFrame = _source_lazyframe(args)
-
-    smart_drive_model_names: polars.Series = _get_smart_drive_model_names(args, original_source_lazyframe)
-
-    smart_model_name_mappings_dataframe: polars.DataFrame = _get_smart_drive_model_mappings(smart_drive_model_names)
-
-    # Can delete SMART drive model name series as its no longer used
-    del smart_drive_model_names
-
-    drive_model_quarterly_afr_stats: dict[str, list[dict[str, str | int]]] = _compute_drive_quarterly_afrs(
-        args, original_source_lazyframe, smart_model_name_mappings_dataframe )
-    print( "\nDrive quarterly AFR data:\n" + json.dumps(drive_model_quarterly_afr_stats, indent=4, sort_keys=True) )
-
-    # _generate_output_csv(args, drive_model_quarterly_afr_stats, drive_deploy_count_dataframe)
-    #
-    processing_duration: float = time.perf_counter() - processing_start
-    print(f"\nETL pipeline total processing time: {processing_duration:.01f} seconds\n")
+        del computed_afr_data
 
 
 if __name__ == "__main__":
-
-    # Not sure why this needs to be done in main context but that's what they say
-    #   Using spawn even though it's more expensive as to not inherit the memory space
-    #       of the parent that is taking up 24 GB oe memory
-    multiprocessing.set_start_method('spawn')
-
     _main()
