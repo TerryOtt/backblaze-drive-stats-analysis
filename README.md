@@ -4,7 +4,16 @@
 
 ## Creating Quarterly AFR CSV
 
-**NOTE**: 8 GB of memory is _required_, otherwise the process will be killed by the OS due to memory exhaustion.
+### System Requirements
+
+1. a Python 3.x intepreter
+1. Python `pip` to install this script's Python dependencies
+1. 8+ GB of memory (process will be killed by the OS due to memory exhaustion with less)
+1. Network access
+
+I've tested on multiple architectures (both x86-64 amd ARM64) because, well, why not?
+
+### Backblaze B2 Bucket Credentials
 
 To get the access key/secret access key for read-only access to the B2 bucket, visit 
 the [Backblaze source data site](https://www.backblaze.com/cloud-storage/resources/hard-drive-test-data)
@@ -12,6 +21,8 @@ and search for the string "**Application Key**."
 
 Both values are public because they only provide read-only access, but GitHub doesn't love seeing access keys committed to
 repositories, so it's left as an exercise for the reader.
+
+### Installation Steps
 
 ```
 $ sudo apt-get update
@@ -68,21 +79,14 @@ $ wc -l quarterly_afr_2025q3.csv
 ```
 
 ## Runtime Data
-
+ 
 This section demonstrates the effects of various amounts of CPU and RAM
 resources when running this script.
 
-I _happened_ to test on AWS EC2 instances as it was convenient, but to be clear, 
-the script runs fine on anything with the following three things:
-* a Python 3.x intepreter
-* Python `pip` to install this script's Python dependencies
-* 8+ GB of memory
-* Network access
+I _happened_ to test on AWS EC2 instances as it was convenient for me.
 
-I've even tested on multiple architectures (both x86-64 amd ARM64) because, well, 
-why not?
-
-Pricing is `us-west-1` prices (USD) as of 2025-10-26
+Tests were performed in AWS's `us-west-1` region, as it has the lowest latency to 
+the Backblaze data. Per-minute `us-west-1` pricing (USD) is from 2025-10-28. 
 
 * **c7i.24xlarge** (48C/96T CPU, 192 GB memory): minutes
   *  USD (0.1781 USD / minute)
@@ -94,12 +98,19 @@ Pricing is `us-west-1` prices (USD) as of 2025-10-26
   *  USD (0.0297 USD / minute)
 * **c7i.4xlarge** (8C/16T CPU, 32 GB memory):  minutes
   * USD (0.0149 USD / minute)
+* **r7i.2xlarge** (4C / 8T CPU, 64 GB memory): minutes
+  * USD (0.xxxx USD / minute)
+* **m7i.2xlarge** (4C / 8T CPU, 32 GB memory): minutes
+  * USD (0.xxxx USD / minute)
 * **c7i.2xlarge** (4C / 8T CPU, 16 GB memory): minutes
   * USD (0.xxxx USD / minute)
-* **c7i.xlarge** (2C / 4T CPU, 8 GB memory): minutes
-  * 0.xx USD (0.xxxx USD / minute)
-* **m7i.large** (1C / 2T CPU, 8 GB memory): minutes
-  * 0.xx (0.xxxx USD / minute)
-
-_Note_: runtime tests were performed in AWS's `us-west-1` region, as it has the lowest latency to 
-the Backblaze data.
+* **r7i.xlarge** (2C / 4T CPU, 32 GB memory): minutes
+  * 0.xx (0.0049 USD / minute)
+* **m7i.xlarge** (2C / 4T CPU, 16 GB memory): minutes
+  * 0.xx (xx minutes @ 0.00392 USD / minute)
+* **c7i.xlarge** (2C / 4T CPU, 8 GB memory): 10.7 minutes
+  * 0.04 USD (10.7 minutes @ 0.00371 USD / minute)
+* **r7i.large** (1C / 2T CPU, 16 GB memory): 18.3 minutes
+  * 0.05 USD (18.3 minutes @ 0.00245 USD / minute)
+* **m7i.large** (1C / 2T CPU, 8 GB memory): 26.2 minutes
+  * 0.06 USD (26.2 minutes @ 0.00196 USD / minute)
