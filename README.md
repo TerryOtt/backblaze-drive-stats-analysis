@@ -99,13 +99,13 @@ the Backblaze data. Per-minute `us-west-1` pricing (USD) is from 2025-10-28.
 * **c7i.4xlarge** (8C/16T CPU, 32 GB memory):  minutes
   * USD (0.0149 USD / minute)
 * **r7i.2xlarge** (4C / 8T CPU, 64 GB memory): minutes
-  * USD (0.xxxx USD / minute)
+  * USD (x.x minutes @ 0.00980 USD / minute)
 * **m7i.2xlarge** (4C / 8T CPU, 32 GB memory): minutes
-  * USD (0.xxxx USD / minute)
-* **c7i.2xlarge** (4C / 8T CPU, 16 GB memory): minutes
-  * USD (0.xxxx USD / minute)
-* **r7i.xlarge** (2C / 4T CPU, 32 GB memory): minutes
-  * 0.xx (0.0049 USD / minute)
+  * USD (x.x minutes @ 0.00784 USD / minute)
+* **c7i.2xlarge** (4C / 8T CPU, 16 GB memory): 9.7 minutes
+  * 0.07 USD (9.7 minutes @ 0.00742 USD / minute)
+* **r7i.xlarge** (2C / 4T CPU, 32 GB memory): 11.6 minutes
+  * 0.06 USD (11.2 mintes @ 0.00490 USD / minute)
 * **m7i.xlarge** (2C / 4T CPU, 16 GB memory): minutes
   * 0.xx (xx minutes @ 0.00392 USD / minute)
 * **c7i.xlarge** (2C / 4T CPU, 8 GB memory): 10.7 minutes
