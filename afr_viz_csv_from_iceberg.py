@@ -286,12 +286,28 @@ def _do_quarterly_afr_calculations(
 
     operation_start: float = time.perf_counter()
 
-    quarterly_afr_calcs_by_drive: dict[str, list[dict[str, str | int | float]]] = {}
+    quarterly_afr_by_drive: dict[str, list[ dict[str, str | int | float ]]] = {}
+
+    month_to_quarter_lookup_table: dict[int, int] = {
+        1: 1,
+        2: 1,
+        3: 1,
+
+        4: 2,
+        5: 2,
+        6: 2,
+
+        7: 3,
+        8: 3,
+        9: 3,
+
+        10: 4,
+        11: 4,
+        12: 4,
+    }
 
     for model_idx, curr_norm_drive_model in enumerate(normalized_drive_models):
         print(f"\tCandidate drive model {model_idx + 1:2d} of {norm_drive_model_count:2d}: \"{curr_norm_drive_model}\"")
-
-        model_processing_start: float = time.perf_counter()
 
         drive_models_smart_names: list[str] = smart_model_name_mappings_dataframe.filter(
                 polars.col("drive_model_name_normalized").eq(curr_norm_drive_model)
@@ -301,95 +317,79 @@ def _do_quarterly_afr_calculations(
 
         # print(f"\t\t\tSMART drive model names: {json.dumps(drive_models_smart_names)}")
 
-        quarterly_drive_days: int = 0
-        quarterly_drive_failures: int = 0
-        quarterly_serials_seen: set[str] = set()
+        model_processing_start: float = time.perf_counter()
 
-        prev_month: int | None = None
+        quarterly_afr_data: dict[str, dict[str, str | int | float | set[str]]] = {}
 
-        month_to_quarter_lookup_table: dict[int, int] = {
-             1: 1,
-             2: 1,
-             3: 1,
-
-             4: 2,
-             5: 2,
-             6: 2,
-
-             7: 3,
-             8: 3,
-             9: 3,
-
-            10: 4,
-            11: 4,
-            12: 4,
-        }
-
-        # Walk all data rows for this drive sorted by date
+        # Walk all data rows for this drive -- unsorted to save time
         for drive_data_rows_batch in source_lazyframe.filter(
                     polars.col("model").is_in(drive_models_smart_names)
                 ).select(
                     "date", "serial_number", "failure"
-                ).sort(
-                    "date"
                 ).collect_batches(chunk_size=1024*16):
 
-            for curr_drive_row in drive_data_rows_batch.iter_rows():
+            for row_date, row_serial_number, row_failure in drive_data_rows_batch.iter_rows():
+                year_quarter: str = f"{row_date.year} Q{month_to_quarter_lookup_table[row_date.month]}"
 
-                # Have we walked into a new quarter?
-                curr_date: datetime.date = curr_drive_row[0]
-                curr_month: int = curr_date.month
-                if prev_month is None or (curr_month != prev_month and curr_month in {1, 3, 7, 10}):
-                    curr_year_quarter: str = f"{curr_date.year} Q{month_to_quarter_lookup_table[curr_month]}"
-                    # print(f"\t\tEntered {curr_year_quarter} on {curr_date.isoformat()}")
+                if year_quarter not in quarterly_afr_data:
+                    quarterly_afr_data[year_quarter]: \
+                            dict[ str, str | int | float | set[str]] = {
 
-                    # Do AFR calcs for previous quarter -- if there was one and had enough drives seen
-                    if prev_month is not None and len(quarterly_serials_seen) >= args.min_drives:
-                        if curr_norm_drive_model not in quarterly_afr_calcs_by_drive:
-                            quarterly_afr_calcs_by_drive[curr_norm_drive_model]: list[dict[str, str | int | float]] = \
-                                []
+                        'serials_seen'              : set(),
+                        'quarterly_drive_days'      : 0,
+                        'quarterly_drives_failed'   : 0,
+                    }
 
-                        this_quarter_afr_data: dict[str, str | int | float] = {
-                            'year_quarter'              : curr_year_quarter,
-                            'unique_serials_seen'       : quarterly_serials_seen,
-                            'quarterly_drive_days'      : quarterly_drive_days,
-                            'quarterly_drive_failures'  : quarterly_drive_failures,
-                            'cumulative_afr'            : _afr_calc(quarterly_drive_days,
-                                                                    quarterly_drive_failures),
-                        }
 
-                        quarterly_afr_calcs_by_drive[curr_norm_drive_model].append( this_quarter_afr_data )
+                drive_quarter_data: dict[ str, str | int | float | set[str]] = \
+                    quarterly_afr_data[year_quarter]
+                if row_serial_number not in drive_quarter_data['serials_seen']:
+                    drive_quarter_data['serials_seen'].add(row_serial_number)
 
-                    # Reset cumulative AFR calc values
-                    quarterly_drive_days = 0
-                    quarterly_drive_failures = 0
-                    quarterly_serials_seen.clear()
-
-                    # Update prev month a single time per quarter
-                    prev_month = curr_month
-
-                if curr_drive_row[1] not in quarterly_serials_seen:
-                    quarterly_serials_seen.add(curr_drive_row[1])
-                quarterly_drive_days += 1
-                quarterly_drive_failures += curr_drive_row[2]
-
-                # Help the garbage collector out by explicitly marking this memory as not having any references
-                del curr_drive_row
+                drive_quarter_data['quarterly_drive_days']      += 1
+                drive_quarter_data['quarterly_drives_failed']   += row_failure
 
             # Help the garbage collector out by explicitly marking this memory as not having any references
             del drive_data_rows_batch
 
-        model_processing_duration: float = time.perf_counter() - model_processing_start
+        model_data_walk_duration: float = time.perf_counter() - model_processing_start
 
-        if curr_norm_drive_model in quarterly_afr_calcs_by_drive:
-            print(f"\t\tAdded AFR data for {len(quarterly_afr_calcs_by_drive[curr_norm_drive_model]):2d} quarters "
-                  f"in {model_processing_duration:.01f} seconds")
+        print(f"\t\tQuarterly AFR data from Polars processed in {model_data_walk_duration:.01f} seconds")
+
+        # Walk all quarters and do AFR calc -- must walk in sorted quarter order to get sane stats
+        for curr_year_quarter in sorted(quarterly_afr_data):
+            curr_quarter_data: dict[ str, str | int | float | set[str]] = quarterly_afr_data[curr_year_quarter]
+
+            quarterly_serials_seen: int = len(curr_quarter_data['serials_seen'])
+
+            if quarterly_serials_seen >= args.min_drives:
+                quarterly_drive_days: int = curr_quarter_data['quarterly_drive_days']
+                quarterly_drive_failures: int = curr_quarter_data['quarterly_drives_failed']
+
+                this_quarter_afr_data: dict[str, str | int | float] = {
+                    'year_quarter'              : curr_year_quarter,
+                    'unique_serials_seen'       : quarterly_serials_seen,
+                    'quarterly_drive_days'      : quarterly_drive_days,
+                    'quarterly_drive_failures'  : quarterly_drive_failures,
+                    'cumulative_afr'            : _afr_calc(quarterly_drive_days,
+                                                            quarterly_drive_failures),
+                }
+
+                if curr_norm_drive_model not in quarterly_afr_by_drive:
+                    quarterly_afr_by_drive[curr_norm_drive_model] = []
+
+                quarterly_afr_by_drive[curr_norm_drive_model].append(this_quarter_afr_data)
+
+        del quarterly_afr_data
+
+        if curr_norm_drive_model in quarterly_afr_by_drive:
+                print(f"\t\tAdded AFR data for {len(quarterly_afr_by_drive[curr_norm_drive_model]):2d} quarters")
         else:
             print("\t\tINFO: candidate drive model filtered out due to no quarters with >= "
                   f"{args.min_drives:,} drives deployed (modify with --min_drives)")
 
     operation_duration: float = time.perf_counter() - operation_start
-    drive_models_with_afr: int = len(quarterly_afr_calcs_by_drive)
+    drive_models_with_afr: int = len(quarterly_afr_by_drive)
     print(f"\n\tComputed quarterly AFR for {drive_models_with_afr:,} of {norm_drive_model_count:,} "
           f"candidate drive models in {operation_duration:.01f} seconds")
 
@@ -397,7 +397,7 @@ def _do_quarterly_afr_calculations(
         print(f"\t\t{norm_drive_model_count - drive_models_with_afr:,} candidate drive models filtered out due to "
             "insufficient drive deploy count")
 
-    return quarterly_afr_calcs_by_drive
+    return quarterly_afr_by_drive
 
 
 def _main() -> None:
