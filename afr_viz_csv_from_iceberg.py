@@ -419,7 +419,7 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
 
 def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
                         excel_workbook: xlsxwriter.workbook.Workbook,
-                        excel_sheet: xlsxwriter.workbook.Worksheet ) -> None:
+                        excel_sheet: xlsxwriter.workbook.Worksheet ) -> tuple[int, int]:
 
     curr_year_quarter: tuple[int, int]
     max_year_quarter: tuple[int, int] = (0, 0)
@@ -432,6 +432,7 @@ def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
         {
             'align'         : 'center',
             'valign'        : 'vcenter',
+            'border'        : 1,
             'num_format'    : '0.000',
         }
     )
@@ -440,6 +441,7 @@ def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
         {
             'align'         : 'center',
             'valign'        : 'vcenter',
+            'border'        : 1,
             'num_format'    : '#,##0',
         }
     )
@@ -497,6 +499,36 @@ def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
             # Increment display column four to move to next model
             curr_col += 4
 
+    return max_year_quarter
+
+
+def _xlsx_add_year_quarter_rows(max_year_quarter: tuple[int, int],
+                                excel_workbook: xlsxwriter.workbook.Workbook,
+                                excel_sheet: xlsxwriter.workbook.Worksheet) -> None:
+    year_quarter_format: xlsxwriter.workbook.Format = excel_workbook.add_format(
+        {
+            'align': 'center',
+            'valign': 'vcenter',
+            'border': 1,
+        }
+    )
+
+    rows_of_year_quarter_data_needed: int = (4 * (max_year_quarter[0] - 1)) + max_year_quarter[1]
+
+    curr_year: int = 1
+    curr_quarter: int = 1
+
+    for curr_row in range(5, rows_of_year_quarter_data_needed + 5):
+        excel_sheet.write(curr_row, 0, curr_year, year_quarter_format)
+        excel_sheet.write(curr_row, 1, curr_quarter, year_quarter_format)
+
+        curr_quarter += 1
+
+        # Did we roll to next year?
+        if curr_quarter == 5:
+            curr_year += 1
+            curr_quarter = 1
+
 
 def _generate_output_xlsx(args: argparse.Namespace,
                           quarterly_afr_by_drive_model: AfrPerDriveModelQuarterType ) -> str:
@@ -517,7 +549,9 @@ def _generate_output_xlsx(args: argparse.Namespace,
     with xlsxwriter.Workbook(generated_xlsx_path) as excel_workbook:
         excel_sheet: xlsxwriter.workbook.Worksheet = excel_workbook.add_worksheet()
         _xlsx_add_header_rows(quarterly_afr_by_drive_model, excel_workbook, excel_sheet)
-        _xlsx_add_data_rows(quarterly_afr_by_drive_model, excel_workbook, excel_sheet)
+        max_year_quarter: tuple[int, int] = _xlsx_add_data_rows(quarterly_afr_by_drive_model,
+                                                                excel_workbook, excel_sheet)
+        _xlsx_add_year_quarter_rows(max_year_quarter, excel_workbook, excel_sheet)
 
     return generated_xlsx_path
 
