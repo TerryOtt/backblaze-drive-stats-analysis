@@ -8,7 +8,7 @@
 
 1. a Python 3.x intepreter
 1. Python `pip` to install this script's Python dependencies
-1. 8+ GB of memory (process will be killed by the OS due to memory exhaustion with less)
+1. 64+ GB of memory (process will be killed by the OS due to memory exhaustion with less)
 1. Network access
 
 I've tested on multiple architectures (both x86-64 amd ARM64) because, well, why not?
@@ -85,38 +85,13 @@ resources when running this script.
 
 I _happened_ to test on AWS EC2 instances as it was convenient for me.
 
-Tests were performed in AWS's `us-west-1` region, as it has the lowest latency to 
-the Backblaze data. Per-minute `us-west-1` pricing (USD) is from 2025-10-28. 
+Tests were performed in AWS's `us-west-2` region, as `us-west-2` is the lowest latency 
+region to the Backblaze data which offers `*8a` instances (currently only `m8a` 
+as of October 2025.
 
-* **c7i.24xlarge** (48C/96T CPU, 192 GB memory): 4.1 minutes
-  * 0.37 USD (4.1 minutes @ 0.08904 USD / minute)
-* **c7i.16xlarge** (32C/64T CPU, 128 GB memory): 4.3 minutes
-  * 0.26 USD (4.3 minutes @ 0.05936 USD / minute)
-* **c7i.12xlarge** (24C/48T CPU, 96 GB memory): 4.4 minutes
-  * 0.20 USD (4.4 minutes @ 0.04452 USD / minute)
-* **m7i.8xlarge** (16C/32T CPU, 128 GB memory): 5.0 minutes
-  * 0.16 USD (5.0 minutes @ 0.03136 USD / minute)
-* **c7i.8xlarge** (16C/32T CPU, 64 GB memory): 5.3 minutes
-  * 0.16 USD (5.3 minutes @ 0.02968 USD / minute)
-* **r7i.4xlarge** (8C/16T CPU, 128 GB memory): 6.0 minutes
-  * 0.12 USD (6.0 minutes @ 0.01960 USD / minute)
-* **m7i.4xlarge** (8C/16T CPU, 64 GB memory): 6.0 minutes
-  * 0.10 USD (6.0 minutes @ 0.01568 USD / minute)
-* **c7i.4xlarge** (8C/16T CPU, 32 GB memory): 6.7 minutes
-  * 0.10 USD (6.7 minutes @ 0.01484 USD / minute)
-* **r7i.2xlarge** (4C / 8T CPU, 64 GB memory): 7.7 minutes
-  * 0.08 USD (7.7 minutes @ 0.00980 USD / minute)
-* **m7i.2xlarge** (4C / 8T CPU, 32 GB memory): 7.8 minutes
-  * 0.07 USD (7.8 minutes @ 0.00784 USD / minute)
-* **c7i.2xlarge** (4C / 8T CPU, 16 GB memory): 9.7 minutes
-  * 0.07 USD (9.7 minutes @ 0.00742 USD / minute)
-* **r7i.xlarge** (2C / 4T CPU, 32 GB memory): 11.2 minutes
-  * 0.06 USD (11.2 mintes @ 0.00490 USD / minute)
-* **m7i.xlarge** (2C / 4T CPU, 16 GB memory): 11.6 minutes
-  * 0.05 (11.6 minutes @ 0.00392 USD / minute)
-* **c7i.xlarge** (2C / 4T CPU, 8 GB memory): 11.8 minutes
-  * 0.05 USD (11.8 minutes @ 0.00371 USD / minute)
-* **r7i.large** (1C / 2T CPU, 16 GB memory): 18.3 minutes
-  * 0.05 USD (18.3 minutes @ 0.00245 USD / minute)
-* **m7i.large** (1C / 2T CPU, 8 GB memory): 26.2 minutes
-  * 0.06 USD (26.2 minutes @ 0.00196 USD / minute)
+* **m8a.4xlarge** (16 C / 16 T CPU, 64 GB memory):
+* **m8a.8xlarge** (32 C / 32 T CPU, 128 GB memory):
+* **m8a.12xlarge** (48 C / 48 T CPU, 192 GB memory):
+* **m8a.16xlarge** (64 C / 64 T CPU, 256 GB memory):
+* **m8a.24xlarge** (96 C / 96 T CPU, 384 GB memory):
+* **m8a.48xlarge** (192 C / 192 T CPU, 768 GB memory): 
