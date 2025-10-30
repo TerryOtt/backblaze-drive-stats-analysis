@@ -92,6 +92,4 @@ as of October 2025.
 * **m8a.4xlarge** (16 C / 16 T CPU, 64 GB memory): 55 seconds
 * **m8a.8xlarge** (32 C / 32 T CPU, 128 GB memory): 43 seconds
 * **m8a.12xlarge** (48 C / 48 T CPU, 192 GB memory): 38 seconds
-* **m8a.16xlarge** (64 C / 64 T CPU, 256 GB memory):
-* **m8a.24xlarge** (96 C / 96 T CPU, 384 GB memory):
-* **m8a.48xlarge** (192 C / 192 T CPU, 768 GB memory): 
+* **m8a.16xlarge** (64 C / 64 T CPU, 256 GB memory): 38 seconds
