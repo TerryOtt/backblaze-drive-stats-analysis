@@ -414,7 +414,88 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
         excel_sheet.write(4, curr_col + 1, "Delta", vcenter_center_bold_merge_format)
         curr_col += 2
 
-    print(f"\tTotal models being added to sheet: {total_model_count}")
+    print(f"\tHeader rows added to sheet")
+
+
+def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
+                        excel_workbook: xlsxwriter.workbook.Workbook,
+                        excel_sheet: xlsxwriter.workbook.Worksheet ) -> None:
+
+    curr_year_quarter: tuple[int, int]
+    max_year_quarter: tuple[int, int] = (0, 0)
+
+    curr_col: int = 2
+    curr_row: int
+
+    # Create non-bold centered format
+    float_format: xlsxwriter.workbook.Format = excel_workbook.add_format(
+        {
+            'align'         : 'center',
+            'valign'        : 'vcenter',
+            'num_format'    : '0.000',
+        }
+    )
+
+    int_format: xlsxwriter.workbook.Format = excel_workbook.add_format(
+        {
+            'align'         : 'center',
+            'valign'        : 'vcenter',
+            'num_format'    : '#,##0',
+        }
+    )
+
+    for curr_mfr in sorted(afr_by_mfr_model_qtr):
+        for curr_model in sorted(afr_by_mfr_model_qtr[curr_mfr]):
+            curr_year_quarter = (1, 1)
+            prev_model_quarter_values: tuple[float, int] = (0.0, 0)
+            curr_row = 5
+            while afr_by_mfr_model_qtr[curr_mfr][curr_model]:
+                # Remove first entry and display it
+                display_data: dict[str, int | float | str] = afr_by_mfr_model_qtr[curr_mfr][curr_model].pop(0)
+
+                # AFR Value
+                excel_sheet.write(curr_row, curr_col, display_data['afr'], float_format)
+
+                # AFR Delta
+                excel_sheet.write(curr_row, curr_col + 1,
+                                  display_data['afr'] - prev_model_quarter_values[0],
+                                  float_format)
+
+                # Deploy Count Value
+                excel_sheet.write(curr_row, curr_col + 2, display_data['unique_drives_deployed'],
+                                  int_format)
+
+                # Deploy Count Delta
+                excel_sheet.write(curr_row, curr_col + 3,
+                                  display_data['unique_drives_deployed'] - prev_model_quarter_values[1],
+                                  int_format)
+
+                # Update values for prev qtr
+                prev_model_quarter_values = (display_data['afr'], display_data['unique_drives_deployed'])
+
+                # Update max year quarter if current is bigger
+                if (
+                        (curr_year_quarter[0] > max_year_quarter[0]) or
+
+                        (
+                            (curr_year_quarter[0] == max_year_quarter[0]) and
+                            (curr_year_quarter[1] > max_year_quarter[1])
+                        )
+                ):
+                    # Bump up max year quarter to current
+                    max_year_quarter = curr_year_quarter
+
+                # Increment current year & quarter
+                if curr_year_quarter[1] < 4:
+                    curr_year_quarter = (curr_year_quarter[0], curr_year_quarter[1] + 1)
+                else:
+                    curr_year_quarter = (curr_year_quarter[0] + 1, 1)
+
+                # Increment display row
+                curr_row += 1
+
+            # Increment display column four to move to next model
+            curr_col += 4
 
 
 def _generate_output_xlsx(args: argparse.Namespace,
@@ -436,6 +517,7 @@ def _generate_output_xlsx(args: argparse.Namespace,
     with xlsxwriter.Workbook(generated_xlsx_path) as excel_workbook:
         excel_sheet: xlsxwriter.workbook.Worksheet = excel_workbook.add_worksheet()
         _xlsx_add_header_rows(quarterly_afr_by_drive_model, excel_workbook, excel_sheet)
+        _xlsx_add_data_rows(quarterly_afr_by_drive_model, excel_workbook, excel_sheet)
 
     return generated_xlsx_path
 
