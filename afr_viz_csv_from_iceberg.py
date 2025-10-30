@@ -333,7 +333,6 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
         }
     )
 
-
     # Compute values like total drives being displayed and drives for each manufacturer
     total_model_count: int = 0
     drive_models_per_mfr: dict[str, int] = {}
@@ -380,6 +379,40 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
 
         curr_col += cols_for_this_mfr
 
+    # Create row of drive models for each mfr
+    curr_col = 2
+    for curr_mfr in sorted(afr_by_mfr_model_qtr):
+        for curr_model in sorted(afr_by_mfr_model_qtr[curr_mfr]):
+            excel_sheet.merge_range(
+                2, curr_col, 2, curr_col + 3,
+                curr_model,
+                vcenter_center_bold_merge_format
+            )
+            curr_col += 4
+
+    # Write "AFR" and "Deploy Count" for each drive model
+    curr_col = 2
+    for _ in range(total_model_count):
+        excel_sheet.merge_range(
+            3, curr_col, 3, curr_col + 1,
+            "AFR",
+            vcenter_center_bold_merge_format
+        )
+        excel_sheet.merge_range(
+            3, curr_col + 2, 3, curr_col + 3,
+            "Deploy Count",
+            vcenter_center_bold_merge_format
+        )
+        curr_col += 4
+
+    # Add alternating cells for Value and Delta for all cells
+    curr_col = 2
+
+    # Each drive model gets two sets of Value/Delta, one for AFR, one for Deploy Count
+    for _ in range(total_model_count * 2):
+        excel_sheet.write(4, curr_col, "Value", vcenter_center_bold_merge_format )
+        excel_sheet.write(4, curr_col + 1, "Delta", vcenter_center_bold_merge_format)
+        curr_col += 2
 
     print(f"\tTotal models being added to sheet: {total_model_count}")
 
@@ -405,6 +438,7 @@ def _generate_output_xlsx(args: argparse.Namespace,
         _xlsx_add_header_rows(quarterly_afr_by_drive_model, excel_workbook, excel_sheet)
 
     return generated_xlsx_path
+
 
 def _main() -> None:
 
