@@ -1,14 +1,16 @@
 import argparse
-import csv
 import datetime
 import json
 import pathlib
 import polars
 import re
 import time
+import xlsxwriter
 
 import iceberg_table
 
+
+type AfrPerDriveModelQuarterType = dict[str, dict[str, list[dict[str, str | int | float]]]]
 
 def _parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
@@ -49,7 +51,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("b2_secret_access_key",
                         help="Backblaze B2 Secret Access Key")
 
-    parser.add_argument("output_csv", help="Path to output visualization CSV file")
+    parser.add_argument("output_xlsx", help="Path to output visualization XLSX file (s3:// supported)")
     return parser.parse_args()
 
 
@@ -213,66 +215,10 @@ def _get_smart_drive_model_names(args: argparse.Namespace,
     return drive_models_smart_series
 
 
-def _generate_output_csv(args: argparse.Namespace,
-                         computed_afr_data: dict[str, list[dict[str, str | int | float]]] ) -> None:
-
-    print("\nETL pipeline stage 4 of 4: Create visualization CSV...")
-    print(f"\tCreating visualization CSV file \"{args.output_csv}\"")
-
-    column_names: list[str] = [
-        "Year",
-        "Quarter",
-    ]
-
-    max_quarters: int = 0
-    for curr_drive_model in sorted(computed_afr_data):
-        # Add a column for the drive, and then its drive count
-        max_quarters = max(max_quarters, len(computed_afr_data[curr_drive_model]))
-        column_names.extend( [f"{curr_drive_model} AFR", f"{curr_drive_model} Deployed"] )
-
-    with open(args.output_csv, "w", newline='') as output_csv:
-        csv_writer = csv.DictWriter(output_csv, fieldnames=column_names)
-        csv_writer.writeheader()
-
-        # print(json.dumps(column_names, indent=2))
-        print(f"\tMax quarters of AFR data for any drive model: {max_quarters:,}")
-
-        agg_increments_per_year: int = 4
-        display_year: int = 0
-        for curr_quarter in range(max_quarters):
-            display_quarter: int = (curr_quarter + 1) % agg_increments_per_year
-
-            if display_quarter == 0:
-                display_quarter = 4
-            elif display_quarter == 1:
-                display_year += 1
-
-            # print(f"\t\tCreating CSV row for year {display_year}, quarter {display_quarter}")
-            data_row: dict[str, int | float | str] = {
-                'Year':  display_year,
-                'Quarter': display_quarter,
-            }
-
-            # Iterate across all drives to see if they have AFR data for the current quarter
-            for curr_drive_model in computed_afr_data:
-                # Do we have data for this drive or have we consumed it all?
-                if computed_afr_data[curr_drive_model]:
-                    curr_quarter_drive_data: dict[str, str | int | float ] = \
-                        computed_afr_data[curr_drive_model].pop(0)
-                    # Add quarterly AFR and deploy count for this drive
-                    data_row[f"{curr_drive_model} AFR"] = f"{curr_quarter_drive_data['afr']:.03f}"
-                    data_row[f"{curr_drive_model} Deployed"] = f"{curr_quarter_drive_data['drives_deployed']:,}"
-
-            # print(json.dumps(data_row, indent=4, sort_keys=True))
-            csv_writer.writerow(data_row)
-
-        del computed_afr_data
-
-
 def _do_quarterly_afr_calculations(
         args: argparse.Namespace,
         source_lazyframe: polars.LazyFrame,
-        smart_model_name_mappings_dataframe: polars.DataFrame ) -> dict[str, dict[str, list[dict[str, str | int | float]]]]:
+        smart_model_name_mappings_dataframe: polars.DataFrame ) -> AfrPerDriveModelQuarterType:
 
     print("\nETL pipeline stage 3 of 4: Perform AFR calculations...")
 
@@ -295,7 +241,7 @@ def _do_quarterly_afr_calculations(
         "year",
         "quarter",
         "qtr_unique_drives_deployed",
-        "qtr_drive_days",
+            "qtr_drive_days",
         "qtr_failure_count"
     ).collect().sort(
         "model_name",
@@ -304,7 +250,7 @@ def _do_quarterly_afr_calculations(
     )
 
     cumulative_quarter_stats: dict[str, dict[str, dict[str, str | int]]] = {}
-    afr_by_mfr_model_quarter: dict[str, dict[str, list[dict[str, str | int | float]]]] = {}
+    afr_by_mfr_model_quarter: AfrPerDriveModelQuarterType = {}
 
     for curr_quarter_data in quarterly_afr_calc_data.iter_rows(named=True):
         curr_manufacturer, curr_drive_model = curr_quarter_data['model_name'].split()
@@ -339,13 +285,126 @@ def _do_quarterly_afr_calculations(
 
     del cumulative_quarter_stats
 
-    print(json.dumps(afr_by_mfr_model_quarter, indent=4, sort_keys=True))
+    # Purge any models with no quarterly data
+    for curr_mfr in sorted(afr_by_mfr_model_quarter):
+
+        # The list is to get it so we iterate over a list rather than the dict and can delete keys from the dict
+        for curr_model in sorted(list(afr_by_mfr_model_quarter[curr_mfr])):
+
+            # If the list of quarterly stats is empty (hence falsy), remove this model from the data dict
+            if not afr_by_mfr_model_quarter[curr_mfr][curr_model]:
+                del afr_by_mfr_model_quarter[curr_mfr][curr_model]
+
+    # print(json.dumps(afr_by_mfr_model_quarter, indent=4, sort_keys=True))
 
     operation_duration: float = time.perf_counter() - operation_start
     print(f"\tOperation time: {operation_duration:.01f} seconds")
 
     return afr_by_mfr_model_quarter
 
+
+def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
+                          excel_workbook: xlsxwriter.workbook.Workbook,
+                          excel_sheet: xlsxwriter.workbook.Worksheet ) -> None:
+
+    # Generate the first five header rows
+
+    # Row 1: |      |     |                                                             Drives
+    # Row 2: |      |     |                              Mfr 1                            |  ... Mfr N
+    # Row 3: |      |     |         Mfr 1 Drive 1         |         Mfr 1 Drive 2         |
+    # Row 4: |      |     |      AFR      | Deploy Count  |      AFR      | Deploy Count  |
+    # Row 5: | Year | Qtr | Value | Delta | Value | Delta | Value | Delta | Value | Delta |
+
+    bottom_center_bold_merge_format: xlsxwriter.workbook.Format = excel_workbook.add_format(
+        {
+            'bold'      : True,
+            'border'    : 1,
+            'align'     : 'center',
+            'valign'    : 'vbottom',
+        }
+    )
+
+    vcenter_center_bold_merge_format: xlsxwriter.workbook.Format = excel_workbook.add_format(
+        {
+            'bold'      : True,
+            'border'    : 1,
+            'align'     : 'center',
+            'valign'    : 'vcenter',
+        }
+    )
+
+
+    # Compute values like total drives being displayed and drives for each manufacturer
+    total_model_count: int = 0
+    drive_models_per_mfr: dict[str, int] = {}
+    for curr_mfr in sorted(afr_by_mfr_model_qtr):
+        for _ in sorted(list(afr_by_mfr_model_qtr[curr_mfr])):
+            # Already removed models with no quarters >= min drives
+            total_model_count += 1
+
+            if curr_mfr not in drive_models_per_mfr:
+                drive_models_per_mfr[curr_mfr] = 0
+            drive_models_per_mfr[curr_mfr] += 1
+
+    # Year (A1:A5)
+    excel_sheet.merge_range(
+        'A1:A5',
+        'Year',
+        bottom_center_bold_merge_format
+    )
+
+    # Quarter (B1:B5)
+    excel_sheet.merge_range(
+        'B1:B5',
+        'Qtr',
+        bottom_center_bold_merge_format
+    )
+
+    # Drives (C1 : C$1 ... (column that is total number drives * 4) - 1 $1
+    colspan_drives: int = (4 * total_model_count) - 1
+    excel_sheet.merge_range(
+        0, 2, 0, 2 + colspan_drives,
+        'Drive Data',
+        vcenter_center_bold_merge_format
+    )
+
+    # Create cells for all the mfrs along row 2
+    curr_col: int = 2
+    for curr_mfr in sorted(drive_models_per_mfr):
+        cols_for_this_mfr: int = drive_models_per_mfr[curr_mfr] * 4
+        excel_sheet.merge_range(
+            1, curr_col, 1, curr_col + cols_for_this_mfr - 1,
+            curr_mfr,
+            vcenter_center_bold_merge_format
+        )
+
+        curr_col += cols_for_this_mfr
+
+
+    print(f"\tTotal models being added to sheet: {total_model_count}")
+
+
+def _generate_output_xlsx(args: argparse.Namespace,
+                          quarterly_afr_by_drive_model: AfrPerDriveModelQuarterType ) -> str:
+
+    print("\nETL pipeline stage 4 of 4: Generating XLSX for visualizing Backblaze drive stats AFR data...")
+
+    generated_xlsx_path: str
+
+    # Find out if we are generating a temp file that gets copied to S3, or a filesystem URL
+    if args.output_xlsx.startswith("s3://"):
+        # generated_xlsx_path = (create temp file name)
+        raise NotImplementedError("S3 URL paths for XLSX not implemented yet")
+    else:
+        generated_xlsx_path = args.output_xlsx
+
+    print(f"\tOutput XLSX path: {generated_xlsx_path}")
+
+    with xlsxwriter.Workbook(generated_xlsx_path) as excel_workbook:
+        excel_sheet: xlsxwriter.workbook.Worksheet = excel_workbook.add_worksheet()
+        _xlsx_add_header_rows(quarterly_afr_by_drive_model, excel_workbook, excel_sheet)
+
+    return generated_xlsx_path
 
 def _main() -> None:
 
@@ -361,10 +420,10 @@ def _main() -> None:
     # Can delete SMART drive model name series as its no longer used
     del smart_drive_model_names
 
-    afr_by_mfr_model_quarter: dict[str, dict[str, list[dict[str, str | int | float]]]] = \
-        _do_quarterly_afr_calculations( args, original_source_lazyframe, smart_model_name_mappings_dataframe )
+    afr_by_mfr_model_quarter: AfrPerDriveModelQuarterType = _do_quarterly_afr_calculations(
+        args, original_source_lazyframe, smart_model_name_mappings_dataframe )
 
-    # _generate_output_csv(args, quarterly_afr_by_drive )
+    generated_xlsx_file_path: str = _generate_output_xlsx(args, afr_by_mfr_model_quarter )
 
     processing_duration: float = time.perf_counter() - processing_start
     print(f"\nETL pipeline total processing time: {processing_duration:.01f} seconds\n")
