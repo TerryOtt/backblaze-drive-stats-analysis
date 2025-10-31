@@ -312,7 +312,7 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
     # Row 1: |      |     |                                                             Drives
     # Row 2: |      |     |                              Mfr 1                            |  ... Mfr N
     # Row 3: |      |     |         Mfr 1 Drive 1         |         Mfr 1 Drive 2         |
-    # Row 4: |      |     |      AFR      | Deploy Count  |      AFR      | Deploy Count  |
+    # Row 4: |      |     |      AFR      |   Deployed    |      AFR      |   Deployed    |
     # Row 5: | Year | Qtr | Value | Delta | Value | Delta | Value | Delta | Value | Delta |
 
     bottom_center_bold_merge_format: xlsxwriter.workbook.Format = excel_workbook.add_format(
@@ -332,6 +332,16 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
             'valign'    : 'vcenter',
         }
     )
+
+    right_align_bold_format: xlsxwriter.workbook.Format = excel_workbook.add_format(
+        {
+            'bold'      : True,
+            'border'    : 1,
+            'align'     : 'right',
+            'valign'    : 'vcenter',
+        }
+    )
+
 
     # Compute values like total drives being displayed and drives for each manufacturer
     total_model_count: int = 0
@@ -400,7 +410,7 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
         )
         excel_sheet.merge_range(
             3, curr_col + 2, 3, curr_col + 3,
-            "Deploy Count",
+            "Deployed",
             vcenter_center_bold_merge_format
         )
         curr_col += 4
@@ -410,8 +420,8 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
 
     # Each drive model gets two sets of Value/Delta, one for AFR, one for Deploy Count
     for _ in range(total_model_count * 2):
-        excel_sheet.write(4, curr_col, "Value", vcenter_center_bold_merge_format )
-        excel_sheet.write(4, curr_col + 1, "Delta", vcenter_center_bold_merge_format)
+        excel_sheet.write(4, curr_col, "Value", right_align_bold_format )
+        excel_sheet.write(4, curr_col + 1, "Delta", right_align_bold_format )
         curr_col += 2
 
     print(f"\tHeader rows added to sheet")
@@ -431,7 +441,7 @@ def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
     # Create non-bold centered format
     float_format: xlsxwriter.workbook.Format = excel_workbook.add_format(
         {
-            'align'         : 'center',
+            'align'         : 'right',
             'valign'        : 'vcenter',
             'border'        : 1,
             'num_format'    : '0.000',
@@ -440,7 +450,7 @@ def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
 
     int_format: xlsxwriter.workbook.Format = excel_workbook.add_format(
         {
-            'align'         : 'center',
+            'align'         : 'right',
             'valign'        : 'vcenter',
             'border'        : 1,
             'num_format'    : '#,##0',
