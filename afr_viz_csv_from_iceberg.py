@@ -410,7 +410,7 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
         )
         excel_sheet.merge_range(
             3, curr_col + 2, 3, curr_col + 3,
-            "Deployed",
+            "Drives",
             vcenter_center_bold_merge_format
         )
         curr_col += 4
@@ -419,10 +419,12 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
     curr_col = 2
 
     # Each drive model gets two sets of Value/Delta, one for AFR, one for Deploy Count
-    for _ in range(total_model_count * 2):
+    for _ in range(total_model_count):
         excel_sheet.write(4, curr_col, "Value", right_align_bold_format )
         excel_sheet.write(4, curr_col + 1, "Delta", right_align_bold_format )
-        curr_col += 2
+        excel_sheet.write(4, curr_col + 2, "Count", right_align_bold_format )
+        excel_sheet.write(4, curr_col + 3, "Delta", right_align_bold_format )
+        curr_col += 4
 
     print(f"\tHeader rows added to sheet")
 
@@ -430,10 +432,9 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
 def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
                         max_num_data_rows: int,
                         excel_workbook: xlsxwriter.workbook.Workbook,
-                        excel_sheet: xlsxwriter.workbook.Worksheet ) -> tuple[int, int]:
+                        excel_sheet: xlsxwriter.workbook.Worksheet ) -> None:
 
     curr_year_quarter: tuple[int, int]
-    max_year_quarter: tuple[int, int] = (0, 0)
 
     curr_col: int = 2
     curr_row: int
@@ -492,18 +493,6 @@ def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
                 # Update values for prev qtr
                 prev_model_quarter_values = (display_data['afr'], display_data['unique_drives_deployed'])
 
-                # Update max year quarter if current is bigger
-                if (
-                        (curr_year_quarter[0] > max_year_quarter[0]) or
-
-                        (
-                            (curr_year_quarter[0] == max_year_quarter[0]) and
-                            (curr_year_quarter[1] > max_year_quarter[1])
-                        )
-                ):
-                    # Bump up max year quarter to current
-                    max_year_quarter = curr_year_quarter
-
                 # Increment current year & quarter
                 if curr_year_quarter[1] < 4:
                     curr_year_quarter = (curr_year_quarter[0], curr_year_quarter[1] + 1)
@@ -520,6 +509,26 @@ def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
 
             # Increment display column four to move to next model
             curr_col += 4
+
+
+def _xlsx_add_color_scales(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
+                           max_num_data_rows: int,
+                           excel_workbook: xlsxwriter.workbook.Workbook,
+                           excel_sheet: xlsxwriter.workbook.Worksheet ) -> None:
+
+    afr_value_color_scale: dict[str, str | float] = {
+        'type'          : '3_color_scale',
+        'min_color'     : '#00FF00',
+        'mid_type'      : 'num',
+        'mid_value'     : 1.0,
+        'mid_color'     : '#FFFF00',
+        'max_type'      : 'num',
+        'max_value'     : 2.0,
+        'max_color'     : '#FF0000',
+        'multi_range'   : 'C6:C32 G6:G32 K6:K32 O6:O32 S6:S32',
+    }
+
+    excel_sheet.conditional_format("C6:C32", afr_value_color_scale )
 
 
 def _xlsx_add_year_quarter_rows(num_data_rows: int,
@@ -580,6 +589,7 @@ def _generate_output_xlsx(args: argparse.Namespace,
         _xlsx_add_header_rows(quarterly_afr_by_drive_model, excel_workbook, excel_sheet)
         _xlsx_add_year_quarter_rows(max_data_row_count, excel_workbook, excel_sheet)
         _xlsx_add_data_rows(quarterly_afr_by_drive_model, max_data_row_count, excel_workbook, excel_sheet)
+        _xlsx_add_color_scales(quarterly_afr_by_drive_model, max_data_row_count, excel_workbook, excel_sheet)
 
     return generated_xlsx_path
 
