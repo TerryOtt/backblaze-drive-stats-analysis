@@ -423,7 +423,7 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
         excel_sheet.write(4, curr_col + 3, "Delta", right_align_bold_format )
         curr_col += 4
 
-    print(f"\tHeader rows added to sheet")
+    # print(f"\tHeader rows added to sheet")
 
 
 def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
@@ -529,7 +529,7 @@ def _xlsx_add_color_scales(total_model_count: int,
         # Now deal with last letter
         letter_suffix_index: int = col_index % 26
         curr_col_letter_index += chr(ord('@') + letter_suffix_index)
-        print(f"Col index {col_index} got suffix index {letter_suffix_index} and letter {chr(ord('@') + letter_suffix_index)}")
+        # print(f"Col index {col_index} got suffix index {letter_suffix_index} and letter {chr(ord('@') + letter_suffix_index)}")
 
         col_letter_indexes.append(curr_col_letter_index)
 
@@ -541,7 +541,7 @@ def _xlsx_add_color_scales(total_model_count: int,
 
     multi_range_value:str = " ".join(cols_plus_rows)
 
-    print(f"Multi-range val: {multi_range_value}")
+    # print(f"Multi-range val: {multi_range_value}")
 
     afr_value_color_scale: dict[str, str | float] = {
         'type'          : '3_color_scale',
@@ -628,6 +628,8 @@ def _generate_output_xlsx(args: argparse.Namespace,
                             excel_workbook, excel_sheet)
         _xlsx_add_color_scales(total_model_count, max_data_row_count, excel_sheet)
 
+
+    print("\tXLSX file successfully generated")
     return generated_xlsx_path
 
 
