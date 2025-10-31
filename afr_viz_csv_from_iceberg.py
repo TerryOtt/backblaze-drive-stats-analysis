@@ -304,6 +304,7 @@ def _do_quarterly_afr_calculations(
 
 
 def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
+                          total_model_count: int,
                           excel_workbook: xlsxwriter.workbook.Workbook,
                           excel_sheet: xlsxwriter.workbook.Worksheet ) -> None:
 
@@ -343,14 +344,10 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
     )
 
 
-    # Compute values like total drives being displayed and drives for each manufacturer
-    total_model_count: int = 0
+    # Compute values like drives for each manufacturer
     drive_models_per_mfr: dict[str, int] = {}
     for curr_mfr in sorted(afr_by_mfr_model_qtr):
         for _ in sorted(list(afr_by_mfr_model_qtr[curr_mfr])):
-            # Already removed models with no quarters >= min drives
-            total_model_count += 1
-
             if curr_mfr not in drive_models_per_mfr:
                 drive_models_per_mfr[curr_mfr] = 0
             drive_models_per_mfr[curr_mfr] += 1
@@ -430,6 +427,7 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
 
 
 def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
+                        total_model_count: int,
                         max_num_data_rows: int,
                         excel_workbook: xlsxwriter.workbook.Workbook,
                         excel_sheet: xlsxwriter.workbook.Worksheet ) -> None:
@@ -511,10 +509,39 @@ def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
             curr_col += 4
 
 
-def _xlsx_add_color_scales(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
+def _xlsx_add_color_scales(total_model_count: int,
                            max_num_data_rows: int,
-                           excel_workbook: xlsxwriter.workbook.Workbook,
                            excel_sheet: xlsxwriter.workbook.Worksheet ) -> None:
+
+    start_row: int = 6
+    end_row: int = 6 + max_num_data_rows - 1
+
+    # Create list of column letters. Start at C, increment by four for each model.
+    #   After Z, wrap around and do AA, AB, etc
+    col_letter_indexes: list[str] = []
+    for col_index in range(3, (4 * total_model_count) + 3, 4):
+        curr_col_letter_index: str = ""
+        letter_prefix_index: int = col_index // 26
+        if letter_prefix_index > 0:
+            # 1 = A, 26 = Z
+            curr_col_letter_index = chr(ord('@') + letter_prefix_index)
+
+        # Now deal with last letter
+        letter_suffix_index: int = col_index % 26
+        curr_col_letter_index += chr(ord('@') + letter_suffix_index)
+        print(f"Col index {col_index} got suffix index {letter_suffix_index} and letter {chr(ord('@') + letter_suffix_index)}")
+
+        col_letter_indexes.append(curr_col_letter_index)
+
+    #print(f"Column sets: {json.dumps(col_letter_indexes, indent=4, sort_keys=True)}")
+    cols_plus_rows: list[str] = []
+
+    for curr_col_letter_index in col_letter_indexes:
+        cols_plus_rows.append(f"{curr_col_letter_index}{start_row}:{curr_col_letter_index}{end_row}")
+
+    multi_range_value:str = " ".join(cols_plus_rows)
+
+    print(f"Multi-range val: {multi_range_value}")
 
     afr_value_color_scale: dict[str, str | float] = {
         'type'          : '3_color_scale',
@@ -525,7 +552,7 @@ def _xlsx_add_color_scales(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
         'max_type'      : 'num',
         'max_value'     : 2.0,
         'max_color'     : '#FF0000',
-        'multi_range'   : 'C6:C32 G6:G32 K6:K32 O6:O32 S6:S32',
+        'multi_range'   : multi_range_value,
     }
 
     excel_sheet.conditional_format("C6:C32", afr_value_color_scale )
@@ -557,6 +584,14 @@ def _xlsx_add_year_quarter_rows(num_data_rows: int,
             curr_quarter = 1
 
 
+def _get_total_model_count(quarterly_afr_by_drive_model: AfrPerDriveModelQuarterType) -> int:
+    total_models: int = 0
+    for curr_mfr in sorted(quarterly_afr_by_drive_model):
+        total_models += len(quarterly_afr_by_drive_model[curr_mfr])
+
+    return total_models
+
+
 def _get_max_data_row_count(quarterly_afr_by_drive_model: AfrPerDriveModelQuarterType) -> int:
     max_data_rows: int = 0
     for curr_mfr in sorted(quarterly_afr_by_drive_model):
@@ -582,14 +617,16 @@ def _generate_output_xlsx(args: argparse.Namespace,
 
     print(f"\tOutput XLSX path: {generated_xlsx_path}")
 
+    total_model_count: int = _get_total_model_count(quarterly_afr_by_drive_model)
     max_data_row_count: int = _get_max_data_row_count(quarterly_afr_by_drive_model)
 
     with xlsxwriter.Workbook(generated_xlsx_path) as excel_workbook:
         excel_sheet: xlsxwriter.workbook.Worksheet = excel_workbook.add_worksheet()
-        _xlsx_add_header_rows(quarterly_afr_by_drive_model, excel_workbook, excel_sheet)
+        _xlsx_add_header_rows(quarterly_afr_by_drive_model, total_model_count, excel_workbook, excel_sheet)
         _xlsx_add_year_quarter_rows(max_data_row_count, excel_workbook, excel_sheet)
-        _xlsx_add_data_rows(quarterly_afr_by_drive_model, max_data_row_count, excel_workbook, excel_sheet)
-        _xlsx_add_color_scales(quarterly_afr_by_drive_model, max_data_row_count, excel_workbook, excel_sheet)
+        _xlsx_add_data_rows(quarterly_afr_by_drive_model, total_model_count, max_data_row_count,
+                            excel_workbook, excel_sheet)
+        _xlsx_add_color_scales(total_model_count, max_data_row_count, excel_sheet)
 
     return generated_xlsx_path
 
