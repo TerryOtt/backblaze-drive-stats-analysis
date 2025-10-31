@@ -427,7 +427,6 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
 
 
 def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
-                        total_model_count: int,
                         max_num_data_rows: int,
                         excel_workbook: xlsxwriter.workbook.Workbook,
                         excel_sheet: xlsxwriter.workbook.Worksheet ) -> None:
@@ -624,8 +623,7 @@ def _generate_output_xlsx(args: argparse.Namespace,
         excel_sheet: xlsxwriter.workbook.Worksheet = excel_workbook.add_worksheet()
         _xlsx_add_header_rows(quarterly_afr_by_drive_model, total_model_count, excel_workbook, excel_sheet)
         _xlsx_add_year_quarter_rows(max_data_row_count, excel_workbook, excel_sheet)
-        _xlsx_add_data_rows(quarterly_afr_by_drive_model, total_model_count, max_data_row_count,
-                            excel_workbook, excel_sheet)
+        _xlsx_add_data_rows(quarterly_afr_by_drive_model, max_data_row_count, excel_workbook, excel_sheet)
         _xlsx_add_color_scales(total_model_count, max_data_row_count, excel_sheet)
 
 
@@ -651,6 +649,10 @@ def _main() -> None:
         args, original_source_lazyframe, smart_model_name_mappings_dataframe )
 
     generated_xlsx_file_path: str = _generate_output_xlsx(args, afr_by_mfr_model_quarter )
+
+    if generated_xlsx_file_path.startswith("s3://"):
+        #_copy_xlsx_to_s3(args, generated_xlsx_file_path)
+        pass
 
     processing_duration: float = time.perf_counter() - processing_start
     print(f"\nETL pipeline total processing time: {processing_duration:.01f} seconds\n")
