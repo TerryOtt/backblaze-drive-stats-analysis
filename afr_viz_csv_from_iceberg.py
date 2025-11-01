@@ -310,11 +310,11 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
 
     # Generate the first five header rows
 
-    # Row 1: |      |     |                                                             Drives
-    # Row 2: |      |     |                              Mfr 1                            |  ... Mfr N
-    # Row 3: |      |     |         Mfr 1 Drive 1         |         Mfr 1 Drive 2         |
-    # Row 4: |      |     |      AFR      |   Deployed    |      AFR      |   Deployed    |
-    # Row 5: | Year | Qtr | Value | Delta | Value | Delta | Value | Delta | Value | Delta |
+    # Row 1: |      |     |                                                Drives
+    # Row 2: |      |     |                      Mfr 1                       |  ... Mfr N
+    # Row 3: |      |     |                  Mfr 1 Drive 1                   |
+    # Row 4: |      |     |      AFR      |                Drives            |
+    # Row 5: | Year | Qtr | Value | Delta | Value | Delta | Failed | Retired |
 
     bottom_center_bold_merge_format: xlsxwriter.workbook.Format = excel_workbook.add_format(
         {
@@ -431,8 +431,8 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
         bottom_center_bold_merge_format
     )
 
-    # Drives (C1 : C$1 ... (column that is total number drives * 4) - 1 $1
-    colspan_drives: int = (4 * total_model_count) - 1
+    # Drives (C1 : C$1 ... (column that is total number drives * 6) - 1 $1
+    colspan_drives: int = (6 * total_model_count) - 1
     excel_sheet.merge_range(
         0, 2, 0, 2 + colspan_drives,
         'Drive Data',
@@ -442,7 +442,7 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
     # Create cells for all the mfrs along row 2
     curr_col: int = 2
     for curr_mfr in sorted(drive_models_per_mfr):
-        cols_for_this_mfr: int = drive_models_per_mfr[curr_mfr] * 4
+        cols_for_this_mfr: int = drive_models_per_mfr[curr_mfr] * 6
         excel_sheet.merge_range(
             1, curr_col, 1, curr_col + cols_for_this_mfr - 1,
             curr_mfr,
@@ -456,11 +456,11 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
     for curr_mfr in sorted(afr_by_mfr_model_qtr):
         for curr_model in sorted(afr_by_mfr_model_qtr[curr_mfr]):
             excel_sheet.merge_range(
-                2, curr_col, 2, curr_col + 3,
+                2, curr_col, 2, curr_col + 5,
                 curr_model,
                 mfr_center_format[curr_mfr]
             )
-            curr_col += 4
+            curr_col += 6
 
     # Write "AFR" and "Deploy Count" for each drive model
     curr_col = 2
@@ -472,11 +472,11 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
                 mfr_center_format[curr_mfr]
             )
             excel_sheet.merge_range(
-                3, curr_col + 2, 3, curr_col + 3,
+                3, curr_col + 2, 3, curr_col + 5,
                 "Drives",
                 mfr_center_format[curr_mfr]
             )
-            curr_col += 4
+            curr_col += 6
 
     # Add alternating cells for Value and Delta for all cells
     curr_col = 2
@@ -488,7 +488,9 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
             excel_sheet.write(4, curr_col + 1, "Delta", mfr_right_format[curr_mfr] )
             excel_sheet.write(4, curr_col + 2, "Count", mfr_right_format[curr_mfr] )
             excel_sheet.write(4, curr_col + 3, "Delta", mfr_right_format[curr_mfr] )
-            curr_col += 4
+            excel_sheet.write(4, curr_col + 4, "Failed", mfr_right_format[curr_mfr])
+            excel_sheet.write(4, curr_col + 5, "Retired", mfr_right_format[curr_mfr])
+            curr_col += 6
 
     # print(f"\tHeader rows added to sheet")
 
@@ -554,6 +556,16 @@ def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
                                   display_data['unique_drives_deployed'] - prev_model_quarter_values[1],
                                   int_format)
 
+                # Failed
+                excel_sheet.write(curr_row, curr_col + 4,
+                                  None,
+                                  int_format)
+
+                # Retired
+                excel_sheet.write(curr_row, curr_col + 5,
+                                  None,
+                                  int_format)
+
                 # Update values for prev qtr
                 prev_model_quarter_values = (display_data['afr'], display_data['unique_drives_deployed'])
 
@@ -568,11 +580,11 @@ def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
 
             # Handle any rows from here to max
             for curr_row in range(curr_row, max_num_data_rows + 5):
-                for col_offset in range(4):
+                for col_offset in range(6):
                     excel_sheet.write(curr_row, curr_col + col_offset, None, blank_with_border_format)
 
             # Increment display column four to move to next model
-            curr_col += 4
+            curr_col += 6
 
 
 def _xlsx_create_multi_range(total_model_count: int, max_num_data_rows: int, start_col: int) -> str:
@@ -581,7 +593,7 @@ def _xlsx_create_multi_range(total_model_count: int, max_num_data_rows: int, sta
 
     col_letter_indexes: list[str] = []
 
-    for col_index in range(start_col, (4 * total_model_count) + start_col, 4):
+    for col_index in range(start_col, (6 * total_model_count) + start_col, 6):
         curr_col_letter_index: str = ""
         letter_prefix_index: int = col_index // 26
         if letter_prefix_index > 0:
