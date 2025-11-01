@@ -322,6 +322,8 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
             'border'    : 1,
             'align'     : 'center',
             'valign'    : 'vbottom',
+            'font_color': '#FFFFFF',
+            'bg_color'  : '#606060',
         }
     )
 
@@ -331,20 +333,83 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
             'border'    : 1,
             'align'     : 'center',
             'valign'    : 'vcenter',
+            'font_color': '#FFFFFF',
+            'bg_color'  : '#606060',
         }
     )
 
-    right_align_bold_format: xlsxwriter.workbook.Format = excel_workbook.add_format(
-        {
-            'bold'      : True,
-            'border'    : 1,
-            'align'     : 'right',
-            'valign'    : 'vcenter',
-        }
-    )
+    mfr_center_format: dict[str, xlsxwriter.workbook.Format] = {
+        'Seagate': excel_workbook.add_format(
+            {
+                'bold'          : True,
+                'border'        : 1,
+                'align'         : 'center',
+                'valign'        : 'vcenter',
+                'font_color'    :  '#FFFFFF',
+                'bg_color'      : '#6EBE49',
+            }
+        ),
+
+        'Toshiba': excel_workbook.add_format(
+            {
+                'bold'      : True,
+                'border'    : 1,
+                'align'     : 'center',
+                'valign'    : 'vcenter',
+                'font_color': '#FFFFFF',
+                'bg_color'  : '#CC0000',
+            }
+        ),
+
+        'WDC/HGST': excel_workbook.add_format(
+            {
+                'bold'      : True,
+                'border'    : 1,
+                'align'     : 'center',
+                'valign'    : 'vcenter',
+                'font_color': '#FFFFFF',
+                'bg_color'  : '#00529F',
+            }
+        ),
+    }
+
+    mfr_right_format: dict[str, xlsxwriter.workbook.Format] = {
+        'Seagate': excel_workbook.add_format(
+            {
+                'bold'      : True,
+                'border'    : 1,
+                'align'     : 'right',
+                'valign'    : 'vcenter',
+                'font_color': '#FFFFFF',
+                'bg_color'  : '#6EBE49',
+            }
+        ),
+
+        'Toshiba': excel_workbook.add_format(
+            {
+                'bold'      : True,
+                'border'    : 1,
+                'align'     : 'right',
+                'valign'    : 'vcenter',
+                'font_color': '#FFFFFF',
+                'bg_color'  : '#CC0000',
+            }
+        ),
+
+        'WDC/HGST': excel_workbook.add_format(
+            {
+                'bold'      : True,
+                'border'    : 1,
+                'align'     : 'right',
+                'valign'    : 'vcenter',
+                'font_color': '#FFFFFF',
+                'bg_color'  : '#00529F',
+            }
+        ),
+    }
 
 
-    # Compute values like drives for each manufacturer
+    # Compute number of drive models for each manufacturer
     drive_models_per_mfr: dict[str, int] = {}
     for curr_mfr in sorted(afr_by_mfr_model_qtr):
         for _ in sorted(list(afr_by_mfr_model_qtr[curr_mfr])):
@@ -381,7 +446,7 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
         excel_sheet.merge_range(
             1, curr_col, 1, curr_col + cols_for_this_mfr - 1,
             curr_mfr,
-            vcenter_center_bold_merge_format
+            mfr_center_format[curr_mfr]
         )
 
         curr_col += cols_for_this_mfr
@@ -393,35 +458,37 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
             excel_sheet.merge_range(
                 2, curr_col, 2, curr_col + 3,
                 curr_model,
-                vcenter_center_bold_merge_format
+                mfr_center_format[curr_mfr]
             )
             curr_col += 4
 
     # Write "AFR" and "Deploy Count" for each drive model
     curr_col = 2
-    for _ in range(total_model_count):
-        excel_sheet.merge_range(
-            3, curr_col, 3, curr_col + 1,
-            "AFR",
-            vcenter_center_bold_merge_format
-        )
-        excel_sheet.merge_range(
-            3, curr_col + 2, 3, curr_col + 3,
-            "Drives",
-            vcenter_center_bold_merge_format
-        )
-        curr_col += 4
+    for curr_mfr in sorted(drive_models_per_mfr):
+        for _ in range(drive_models_per_mfr[curr_mfr]):
+            excel_sheet.merge_range(
+                3, curr_col, 3, curr_col + 1,
+                "AFR",
+                mfr_center_format[curr_mfr]
+            )
+            excel_sheet.merge_range(
+                3, curr_col + 2, 3, curr_col + 3,
+                "Drives",
+                mfr_center_format[curr_mfr]
+            )
+            curr_col += 4
 
     # Add alternating cells for Value and Delta for all cells
     curr_col = 2
 
     # Each drive model gets two sets of Value/Delta, one for AFR, one for Deploy Count
-    for _ in range(total_model_count):
-        excel_sheet.write(4, curr_col, "Value", right_align_bold_format )
-        excel_sheet.write(4, curr_col + 1, "Delta", right_align_bold_format )
-        excel_sheet.write(4, curr_col + 2, "Count", right_align_bold_format )
-        excel_sheet.write(4, curr_col + 3, "Delta", right_align_bold_format )
-        curr_col += 4
+    for curr_mfr in sorted(drive_models_per_mfr):
+        for _ in range(drive_models_per_mfr[curr_mfr]):
+            excel_sheet.write(4, curr_col, "Value", mfr_right_format[curr_mfr] )
+            excel_sheet.write(4, curr_col + 1, "Delta", mfr_right_format[curr_mfr] )
+            excel_sheet.write(4, curr_col + 2, "Count", mfr_right_format[curr_mfr] )
+            excel_sheet.write(4, curr_col + 3, "Delta", mfr_right_format[curr_mfr] )
+            curr_col += 4
 
     # print(f"\tHeader rows added to sheet")
 
@@ -629,21 +696,35 @@ def _xlsx_afr_value_color_scales(total_model_count: int,
 def _xlsx_add_year_quarter_rows(num_data_rows: int,
                                 excel_workbook: xlsxwriter.workbook.Workbook,
                                 excel_sheet: xlsxwriter.workbook.Worksheet) -> None:
-    year_quarter_format: xlsxwriter.workbook.Format = excel_workbook.add_format(
-        {
-            'bold': True,
-            'align': 'center',
-            'valign': 'vcenter',
-            'border': 1,
-        }
+
+
+    year_quarter_formats: tuple[xlsxwriter.workbook.Format, xlsxwriter.workbook.Format ] = (
+        excel_workbook.add_format(
+            {
+                'bold'      : True,
+                'align'     : 'center',
+                'valign'    : 'vcenter',
+                'border'    : 1,
+                'bg_color'  : '#D0D0D0',
+            }
+        ),
+
+        excel_workbook.add_format(
+            {
+                'bold': True,
+                'align': 'center',
+                'valign': 'vcenter',
+                'border': 1,
+            }
+        ),
     )
 
     curr_year: int = 1
     curr_quarter: int = 1
 
     for curr_row in range(num_data_rows):
-        excel_sheet.write(curr_row + 5, 0, curr_year, year_quarter_format)
-        excel_sheet.write(curr_row + 5, 1, curr_quarter, year_quarter_format)
+        excel_sheet.write(curr_row + 5, 0, curr_year, year_quarter_formats[curr_year % 2])
+        excel_sheet.write(curr_row + 5, 1, curr_quarter, year_quarter_formats[curr_year % 2])
 
         curr_quarter += 1
 
@@ -698,6 +779,8 @@ def _generate_output_xlsx(args: argparse.Namespace,
 
         # Sadly autofit didn't work well
         # excel_sheet.autofit()
+
+        excel_sheet.freeze_panes(5, 2)
 
     print("\tXLSX file successfully generated")
     return generated_xlsx_path
