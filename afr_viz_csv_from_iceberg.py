@@ -544,6 +544,42 @@ def _xlsx_add_color_scales(total_model_count: int,
 
     _xlsx_afr_value_color_scales(total_model_count, max_num_data_rows, excel_sheet)
     _xlsx_afr_delta_color_scales(total_model_count, max_num_data_rows, excel_sheet)
+    _xlsx_afr_drive_count_color_scales(total_model_count, max_num_data_rows, excel_sheet)
+    _xlsx_afr_drive_count_delta_color_scales(total_model_count, max_num_data_rows, excel_sheet)
+
+
+def _xlsx_afr_drive_count_delta_color_scales(total_model_count, max_num_data_rows, excel_sheet) -> None:
+    start_col_offset: int = ord('F') - ord('A')
+    multi_range_value: str = _xlsx_create_multi_range(total_model_count, max_num_data_rows, start_col_offset)
+    #print(f"AFR delta ranges: {multi_range_value}")
+
+    color_scale: dict[str, str | float] = {
+        'type'          : '3_color_scale',
+        'min_color'     : '#FF0000',
+        'mid_color'     : '#FFFFFF',
+        'mid_type'      : 'num',
+        'mid_value'     : 0.0,
+        'max_color'     : '#00FF00',
+        'multi_range'   : multi_range_value,
+    }
+
+    excel_sheet.conditional_format(multi_range_value.split()[0], color_scale )
+
+
+def _xlsx_afr_drive_count_color_scales(total_model_count, max_num_data_rows, excel_sheet) -> None:
+    start_col_offset: int = ord('E') - ord('A')
+    multi_range_value: str = _xlsx_create_multi_range(total_model_count, max_num_data_rows, start_col_offset)
+    #print(f"AFR delta ranges: {multi_range_value}")
+
+    color_scale: dict[str, str | float] = {
+        'type'          : '3_color_scale',
+        'min_color'     : '#FF0000',
+        'mid_color'     : '#FFFF00',
+        'max_color'     : '#00FF00',
+        'multi_range'   : multi_range_value,
+    }
+
+    excel_sheet.conditional_format(multi_range_value.split()[0], color_scale )
 
 
 def _xlsx_afr_delta_color_scales(total_model_count: int,
@@ -552,7 +588,7 @@ def _xlsx_afr_delta_color_scales(total_model_count: int,
 
     start_col_offset: int = ord('D') - ord('A')
     multi_range_value: str = _xlsx_create_multi_range(total_model_count, max_num_data_rows, start_col_offset)
-    print(f"AFR delta ranges: {multi_range_value}")
+    # print(f"AFR delta ranges: {multi_range_value}")
 
     color_scale: dict[str, str | float] = {
         'type'          : '3_color_scale',
@@ -573,8 +609,7 @@ def _xlsx_afr_value_color_scales(total_model_count: int,
 
     start_col_offset: int = ord('C') - ord('A')
     multi_range_value: str = _xlsx_create_multi_range(total_model_count, max_num_data_rows, start_col_offset)
-
-    print(f"AFR value ranges: {multi_range_value}")
+    # print(f"AFR value ranges: {multi_range_value}")
 
     color_scale: dict[str, str | float] = {
         'type'          : '3_color_scale',
