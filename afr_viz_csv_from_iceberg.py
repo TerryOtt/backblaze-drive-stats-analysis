@@ -10,7 +10,7 @@ import xlsxwriter
 import iceberg_table
 
 
-type AfrPerDriveModelQuarterType = dict[str, dict[str, list[dict[str, str | int | float]]]]
+type XlsxVizDataPerDriveModelQuarterType = dict[str, dict[str, list[dict[str, str | int | float]]]]
 
 def _parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
@@ -164,7 +164,7 @@ def _create_normalized_model_name_series( drive_models_name_smart_series: polars
 
 
 def _get_smart_drive_model_mappings(smart_drive_model_names_series: polars.Series) -> polars.DataFrame:
-    print("\nETL pipeline stage 2 of 4: Create mapping table for SMART model name -> normalized model name...")
+    print("\nETL pipeline stage 2 of 5: Create mapping table for SMART model name -> normalized model name...")
 
     smart_drive_model_mappings_df: polars.DataFrame = smart_drive_model_names_series.to_frame()
 
@@ -187,7 +187,7 @@ def _get_smart_drive_model_mappings(smart_drive_model_names_series: polars.Serie
 def _get_smart_drive_model_names(args: argparse.Namespace,
                                 original_source_lazyframe: polars.LazyFrame) -> polars.Series:
 
-    print("\nETL pipeline stage 1 of 4: Retrieve candidate SMART drive model names...")
+    print("\nETL pipeline stage 1 of 5: Retrieve candidate SMART drive model names...")
 
     with open(args.drive_patterns_json, "r") as json_handle:
         drive_model_patterns: list[str] = json.load(json_handle)
@@ -216,11 +216,10 @@ def _get_smart_drive_model_names(args: argparse.Namespace,
 
 
 def _do_quarterly_afr_calculations(
-        args: argparse.Namespace,
         source_lazyframe: polars.LazyFrame,
-        smart_model_name_mappings_dataframe: polars.DataFrame ) -> AfrPerDriveModelQuarterType:
+        smart_model_name_mappings_dataframe: polars.DataFrame ) -> polars.DataFrame:
 
-    print("\nETL pipeline stage 3 of 4: Perform AFR calculations...")
+    print("\nETL pipeline stage 3 of 5: Perform AFR calculations...")
 
     operation_start: float = time.perf_counter()
 
@@ -241,7 +240,7 @@ def _do_quarterly_afr_calculations(
         "year",
         "quarter",
         "qtr_unique_drives_deployed",
-            "qtr_drive_days",
+        "qtr_drive_days",
         "qtr_failure_count"
     ).collect().sort(
         "model_name",
@@ -249,62 +248,16 @@ def _do_quarterly_afr_calculations(
         "quarter"
     )
 
-    cumulative_quarter_stats: dict[str, dict[str, dict[str, str | int]]] = {}
-    afr_by_mfr_model_quarter: AfrPerDriveModelQuarterType = {}
-
-    for curr_quarter_data in quarterly_afr_calc_data.iter_rows(named=True):
-        curr_manufacturer, curr_drive_model = curr_quarter_data['model_name'].split()
-        year_quarter: str = f"{curr_quarter_data['year']} Q{curr_quarter_data['quarter']}"
-        # print(f"\tMfr: {curr_manufacturer}, model: {curr_drive_model}, qtr: {year_quarter}")
-
-        if curr_manufacturer not in cumulative_quarter_stats:
-            cumulative_quarter_stats[curr_manufacturer]: dict[str, dict[str, int]] = {}
-            afr_by_mfr_model_quarter[curr_manufacturer] = {}
-        if curr_drive_model not in cumulative_quarter_stats[curr_manufacturer]:
-            cumulative_quarter_stats[curr_manufacturer][curr_drive_model]: dict[str, str | int] = {
-                'cumulative_drive_days'     : 0,
-                'cumulative_failure_count'  : 0,
-            }
-            afr_by_mfr_model_quarter[curr_manufacturer][curr_drive_model] = []
-
-        curr_mfr_model_stats: dict[str, str | int] = cumulative_quarter_stats[curr_manufacturer][curr_drive_model]
-
-        curr_mfr_model_stats['cumulative_drive_days'] += curr_quarter_data['qtr_drive_days']
-        curr_mfr_model_stats['cumulative_failure_count'] += curr_quarter_data['qtr_failure_count']
-
-        # If this quarter has enough drives deployed, add new quarter of AFR data
-        if curr_quarter_data['qtr_unique_drives_deployed'] >= args.min_drives:
-            afr_by_mfr_model_quarter[curr_manufacturer][curr_drive_model].append(
-                {
-                    'year_quarter'              : year_quarter,
-                    'unique_drives_deployed'    : curr_quarter_data['qtr_unique_drives_deployed'],
-                    'failure_count'             : curr_quarter_data['qtr_failure_count'],
-                    'afr'                       : _afr_calc( curr_mfr_model_stats['cumulative_drive_days'],
-                                                             curr_mfr_model_stats['cumulative_failure_count'] ),
-                }
-            )
-
-    del cumulative_quarter_stats
-
-    # Purge any models with no quarterly data
-    for curr_mfr in sorted(afr_by_mfr_model_quarter):
-
-        # The list is to get it so we iterate over a list rather than the dict and can delete keys from the dict
-        for curr_model in sorted(list(afr_by_mfr_model_quarter[curr_mfr])):
-
-            # If the list of quarterly stats is empty (hence falsy), remove this model from the data dict
-            if not afr_by_mfr_model_quarter[curr_mfr][curr_model]:
-                del afr_by_mfr_model_quarter[curr_mfr][curr_model]
 
     # print(json.dumps(afr_by_mfr_model_quarter, indent=4, sort_keys=True))
 
     operation_duration: float = time.perf_counter() - operation_start
     print(f"\tOperation time: {operation_duration:.01f} seconds")
 
-    return afr_by_mfr_model_quarter
+    return quarterly_afr_calc_data
 
 
-def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
+def _xlsx_add_header_rows(afr_by_mfr_model_qtr: XlsxVizDataPerDriveModelQuarterType,
                           total_model_count: int,
                           excel_workbook: xlsxwriter.workbook.Workbook,
                           excel_sheet: xlsxwriter.workbook.Worksheet ) -> None:
@@ -500,7 +453,7 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
     # print(f"\tHeader rows added to sheet")
 
 
-def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
+def _xlsx_add_data_rows(afr_by_mfr_model_qtr: XlsxVizDataPerDriveModelQuarterType,
                         max_num_data_rows: int,
                         excel_workbook: xlsxwriter.workbook.Workbook,
                         excel_sheet: xlsxwriter.workbook.Worksheet ) -> None:
@@ -566,12 +519,12 @@ def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
 
                 # New
                 excel_sheet.write(curr_row, curr_col + 4,
-                                  None,
+                                  display_data['qtr_new_drives'],
                                   int_format)
 
-                # Retired
+                # Removed
                 excel_sheet.write(curr_row, curr_col + 5,
-                                  None,
+                                  display_data['qtr_removed_drives'],
                                   int_format)
 
                 # Failed
@@ -639,9 +592,44 @@ def _xlsx_add_color_scales(total_model_count: int,
     _xlsx_afr_delta_color_scales(total_model_count, max_num_data_rows, excel_sheet)
     _xlsx_afr_drive_count_color_scales(total_model_count, max_num_data_rows, excel_sheet)
     _xlsx_afr_drive_count_delta_color_scales(total_model_count, max_num_data_rows, excel_sheet)
-    # New
-    # Retired
+    _xlsx_afr_new_drives_color_scales(total_model_count, max_num_data_rows, excel_sheet)
+    _xlsx_afr_removed_drives_color_scales(total_model_count, max_num_data_rows, excel_sheet)
     _xlsx_afr_drive_failed_color_scales(total_model_count, max_num_data_rows, excel_sheet)
+
+
+def _xlsx_afr_new_drives_color_scales(total_model_count, max_num_data_rows, excel_sheet) -> None:
+    start_col_offset: int = ord('G') - ord('A')
+    multi_range_value: str = _xlsx_create_multi_range(total_model_count, max_num_data_rows, start_col_offset)
+    #print(f"AFR delta ranges: {multi_range_value}")
+
+    color_scale: dict[str, str | float] = {
+        'type'          : '2_color_scale',
+        'min_type'      : 'num',
+        'min_value'     : 0.0,
+        'min_color'     : '#FFFFFFF',
+        'max_color'     : '#00FF00',
+        'multi_range'   : multi_range_value,
+    }
+
+    excel_sheet.conditional_format(multi_range_value.split()[0], color_scale )
+
+
+def _xlsx_afr_removed_drives_color_scales(total_model_count, max_num_data_rows, excel_sheet) -> None:
+    start_col_offset: int = ord('H') - ord('A')
+    multi_range_value: str = _xlsx_create_multi_range(total_model_count, max_num_data_rows, start_col_offset)
+    #print(f"AFR delta ranges: {multi_range_value}")
+
+    color_scale: dict[str, str | float] = {
+        'type'          : '3_color_scale',
+        'min_type'      : 'num',
+        'min_value'     : 0.0,
+        'min_color'     : '#00FF00',
+        'mid_color'     : '#FFFF00',
+        'max_color'     : '#FF0000',
+        'multi_range'   : multi_range_value,
+    }
+
+    excel_sheet.conditional_format(multi_range_value.split()[0], color_scale )
 
 
 def _xlsx_afr_drive_failed_color_scales(total_model_count, max_num_data_rows, excel_sheet) -> None:
@@ -779,7 +767,7 @@ def _xlsx_add_year_quarter_rows(num_data_rows: int,
             curr_quarter = 1
 
 
-def _get_total_model_count(quarterly_afr_by_drive_model: AfrPerDriveModelQuarterType) -> int:
+def _get_total_model_count(quarterly_afr_by_drive_model: XlsxVizDataPerDriveModelQuarterType) -> int:
     total_models: int = 0
     for curr_mfr in sorted(quarterly_afr_by_drive_model):
         total_models += len(quarterly_afr_by_drive_model[curr_mfr])
@@ -787,7 +775,7 @@ def _get_total_model_count(quarterly_afr_by_drive_model: AfrPerDriveModelQuarter
     return total_models
 
 
-def _get_max_data_row_count(quarterly_afr_by_drive_model: AfrPerDriveModelQuarterType) -> int:
+def _get_max_data_row_count(quarterly_afr_by_drive_model: XlsxVizDataPerDriveModelQuarterType) -> int:
     max_data_rows: int = 0
     for curr_mfr in sorted(quarterly_afr_by_drive_model):
         for curr_model in sorted(quarterly_afr_by_drive_model[curr_mfr]):
@@ -797,9 +785,9 @@ def _get_max_data_row_count(quarterly_afr_by_drive_model: AfrPerDriveModelQuarte
 
 
 def _generate_output_xlsx(args: argparse.Namespace,
-                          quarterly_afr_by_drive_model: AfrPerDriveModelQuarterType ) -> str:
+                          quarterly_afr_by_drive_model: XlsxVizDataPerDriveModelQuarterType ) -> str:
 
-    print("\nETL pipeline stage 4 of 4: Generating XLSX for visualizing Backblaze drive stats AFR data...")
+    print("\nETL pipeline stage 5 of 5: Generating XLSX for visualizing Backblaze drive stats AFR data...")
 
     generated_xlsx_path: str
 
@@ -831,6 +819,163 @@ def _generate_output_xlsx(args: argparse.Namespace,
     return generated_xlsx_path
 
 
+def _add_drives_deployed_removed_each_qtr(args: argparse.Namespace,
+                                          source_lazyframe: polars.LazyFrame,
+                                          smart_model_name_mappings_dataframe: polars.DataFrame,
+                                          afr_data:polars.DataFrame) -> XlsxVizDataPerDriveModelQuarterType:
+
+    print("\nETL pipeline stage 4 of 5: Count new drive deploys and drive removals per model per quarter...")
+
+    pipeline_stage_start: float = time.perf_counter()
+
+    # Get new deploys per quarter for each drive model
+    new_drives_deployed_per_quarter_data_pull_start: float = time.perf_counter()
+    drives_deployed_per_model_per_quarter: polars.DataFrame = source_lazyframe.join(
+        smart_model_name_mappings_dataframe.lazy(),
+        left_on="model",
+        right_on="drive_model_name_smart",
+    ).group_by(
+        polars.col("drive_model_name_normalized").alias("model_name"),
+        polars.col("serial_number"),
+    ).agg(
+        polars.col("date").min().dt.year().alias("deploy_year"),
+        polars.col("date").min().dt.quarter().alias("deploy_quarter"),
+    ).group_by(
+        "model_name",
+        "deploy_year",
+        "deploy_quarter",
+    ).agg(
+        polars.col("serial_number").count().alias("new_drives"),
+    ).collect()
+
+    new_drives_deployed_per_quarter_data_pull_duration: float = time.perf_counter() - new_drives_deployed_per_quarter_data_pull_start
+    print(f"\tNew drives deployed data pulled in {new_drives_deployed_per_quarter_data_pull_duration:.01f} seconds")
+
+    # print(drives_deployed_per_model_per_quarter)
+
+    # Get drives removed quarter for each drive model
+    drives_removed_per_quarter_data_pull_start: float = time.perf_counter()
+    drives_removed_per_model_per_quarter: polars.DataFrame = source_lazyframe.join(
+        smart_model_name_mappings_dataframe.lazy(),
+        left_on="model",
+        right_on="drive_model_name_smart",
+    ).group_by(
+        polars.col("drive_model_name_normalized").alias("model_name"),
+        polars.col("serial_number"),
+    ).agg(
+        polars.col("date").max().dt.year().alias("remove_year"),
+        polars.col("date").max().dt.quarter().alias("remove_quarter"),
+    ).group_by(
+        "model_name",
+        "remove_year",
+        "remove_quarter",
+    ).agg(
+        polars.col("serial_number").count().alias("removed_drives"),
+    ).collect()
+
+    drives_removed_per_quarter_data_pull_duration: float = time.perf_counter() - drives_removed_per_quarter_data_pull_start
+    print(f"\tDrives removed data pulled in {drives_removed_per_quarter_data_pull_duration:.01f} seconds")
+
+    # Add two new columns to afr_data
+    enriched_data: polars.DataFrame = afr_data.join(
+        drives_deployed_per_model_per_quarter,
+        left_on =  [ "model_name", "year",        "quarter" ],
+        right_on = [ "model_name", "deploy_year", "deploy_quarter"],
+        how = "left",   # Left join, right table may not have a match
+    ).join(
+        drives_removed_per_model_per_quarter,
+        left_on =  [ "model_name", "year",        "quarter" ],
+        right_on = [ "model_name", "remove_year", "remove_quarter"],
+        how = "left",   # Left join, right table may not have a match
+    ).select(
+        "model_name",
+        "year",
+        "quarter",
+        polars.col("new_drives").replace({None: 0}).alias("qtr_new_drives"),
+        "qtr_unique_drives_deployed",
+        polars.col("removed_drives").replace({None: 0}).alias("qtr_removed_drives"),
+        "qtr_failure_count",
+        "qtr_drive_days",
+    ).sort(
+        "model_name",
+        "year",
+        "quarter",
+    )
+
+    # print(enriched_data)
+
+    viz_data: XlsxVizDataPerDriveModelQuarterType = _create_xlsx_viz_data(args, enriched_data)
+
+    pipeline_stage_duration: float = time.perf_counter() - pipeline_stage_start
+    print(f"\tStage duration: {pipeline_stage_duration:.01f} seconds")
+
+    return viz_data
+
+
+def _create_xlsx_viz_data(args: argparse.Namespace,
+                          quarterly_afr_calc_data: polars.DataFrame) -> XlsxVizDataPerDriveModelQuarterType:
+
+    #  Get max year/quarter in the data
+    max_year_quarter: str = "1970 Q1"
+
+    cumulative_quarter_stats: dict[str, dict[str, dict[str, str | int]]] = {}
+    afr_by_mfr_model_quarter: XlsxVizDataPerDriveModelQuarterType = {}
+
+    for curr_quarter_data in quarterly_afr_calc_data.iter_rows(named=True):
+        curr_manufacturer, curr_drive_model = curr_quarter_data['model_name'].split()
+        year_quarter: str = f"{curr_quarter_data['year']} Q{curr_quarter_data['quarter']}"
+        max_year_quarter = max(max_year_quarter, year_quarter)
+        # print(f"\tMfr: {curr_manufacturer}, model: {curr_drive_model}, qtr: {year_quarter}")
+
+        if curr_manufacturer not in cumulative_quarter_stats:
+            cumulative_quarter_stats[curr_manufacturer]: dict[str, dict[str, int]] = {}
+            afr_by_mfr_model_quarter[curr_manufacturer] = {}
+        if curr_drive_model not in cumulative_quarter_stats[curr_manufacturer]:
+            cumulative_quarter_stats[curr_manufacturer][curr_drive_model]: dict[str, str | int] = {
+                'cumulative_drive_days'     : 0,
+                'cumulative_failure_count'  : 0,
+            }
+            afr_by_mfr_model_quarter[curr_manufacturer][curr_drive_model] = []
+
+        curr_mfr_model_stats: dict[str, str | int] = cumulative_quarter_stats[curr_manufacturer][curr_drive_model]
+
+        curr_mfr_model_stats['cumulative_drive_days'] += curr_quarter_data['qtr_drive_days']
+        curr_mfr_model_stats['cumulative_failure_count'] += curr_quarter_data['qtr_failure_count']
+
+        # If this quarter has enough drives deployed, add new quarter of AFR data
+        if curr_quarter_data['qtr_unique_drives_deployed'] >= args.min_drives:
+            afr_by_mfr_model_quarter[curr_manufacturer][curr_drive_model].append(
+                {
+                    'year_quarter'              : year_quarter,
+                    'qtr_new_drives'            : curr_quarter_data['qtr_new_drives'],
+                    'qtr_removed_drives'        : curr_quarter_data['qtr_removed_drives'],
+                    'unique_drives_deployed'    : curr_quarter_data['qtr_unique_drives_deployed'],
+                    'failure_count'             : curr_quarter_data['qtr_failure_count'],
+                    'afr'                       : _afr_calc( curr_mfr_model_stats['cumulative_drive_days'],
+                                                             curr_mfr_model_stats['cumulative_failure_count'] ),
+                }
+            )
+
+    del cumulative_quarter_stats
+
+    # Data cleanup
+    for curr_mfr in sorted(afr_by_mfr_model_quarter):
+
+        # The list is to get it so we iterate over a list rather than the dict and can delete keys from the dict
+        for curr_model in sorted(list(afr_by_mfr_model_quarter[curr_mfr])):
+
+            # If the list of quarterly stats is empty (hence falsy), remove this model from the data dict
+            if not afr_by_mfr_model_quarter[curr_mfr][curr_model]:
+                del afr_by_mfr_model_quarter[curr_mfr][curr_model]
+            else:
+                last_quarter_data = afr_by_mfr_model_quarter[curr_mfr][curr_model][-1]
+                # If the final row of data has the max year & quarter, reset its removed drives to failure count
+                if last_quarter_data['year_quarter'] == max_year_quarter:
+                    last_quarter_data['qtr_removed_drives'] = last_quarter_data['failure_count']
+
+    return afr_by_mfr_model_quarter
+
+
 def _main() -> None:
 
     processing_start: float = time.perf_counter()
@@ -845,10 +990,14 @@ def _main() -> None:
     # Can delete SMART drive model name series as its no longer used
     del smart_drive_model_names
 
-    afr_by_mfr_model_quarter: AfrPerDriveModelQuarterType = _do_quarterly_afr_calculations(
-        args, original_source_lazyframe, smart_model_name_mappings_dataframe )
+    afr_by_mfr_model_quarter: polars.DataFrame = _do_quarterly_afr_calculations(
+        original_source_lazyframe, smart_model_name_mappings_dataframe )
 
-    generated_xlsx_file_path: str = _generate_output_xlsx(args, afr_by_mfr_model_quarter )
+    # Add drives deployed and removed each quarter to our dataframe
+    viz_data_by_mfr_model_quarter: XlsxVizDataPerDriveModelQuarterType = _add_drives_deployed_removed_each_qtr(
+        args, original_source_lazyframe, smart_model_name_mappings_dataframe, afr_by_mfr_model_quarter)
+
+    generated_xlsx_file_path: str = _generate_output_xlsx(args, viz_data_by_mfr_model_quarter )
 
     if generated_xlsx_file_path.startswith("s3://"):
         #_copy_xlsx_to_s3(args, generated_xlsx_file_path)
