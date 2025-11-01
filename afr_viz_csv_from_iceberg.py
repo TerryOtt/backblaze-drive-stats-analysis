@@ -278,6 +278,7 @@ def _do_quarterly_afr_calculations(
                 {
                     'year_quarter'              : year_quarter,
                     'unique_drives_deployed'    : curr_quarter_data['qtr_unique_drives_deployed'],
+                    'failure_count'             : curr_quarter_data['qtr_failure_count'],
                     'afr'                       : _afr_calc( curr_mfr_model_stats['cumulative_drive_days'],
                                                              curr_mfr_model_stats['cumulative_failure_count'] ),
                 }
@@ -310,11 +311,11 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
 
     # Generate the first five header rows
 
-    # Row 1: |      |     |                                                Drives
-    # Row 2: |      |     |                      Mfr 1                       |  ... Mfr N
-    # Row 3: |      |     |                  Mfr 1 Drive 1                   |
-    # Row 4: |      |     |      AFR      |                Drives            |
-    # Row 5: | Year | Qtr | Value | Delta | Value | Delta | Failed | Retired |
+    # Row 1: |      |     |                                                           Drives
+    # Row 2: |      |     |                         Mfr 1                               |  ... Mfr N
+    # Row 3: |      |     |                     Mfr 1 Drive 1                           |
+    # Row 4: |      |     |      AFR      |                Drives                       |
+    # Row 5: | Year | Qtr | Value | Delta | Value | Delta | Deployed | Failed | Retired |
 
     bottom_center_bold_merge_format: xlsxwriter.workbook.Format = excel_workbook.add_format(
         {
@@ -431,8 +432,10 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
         bottom_center_bold_merge_format
     )
 
+    cols_per_drive_model: int = 7
+
     # Drives (C1 : C$1 ... (column that is total number drives * 6) - 1 $1
-    colspan_drives: int = (6 * total_model_count) - 1
+    colspan_drives: int = (cols_per_drive_model * total_model_count) - 1
     excel_sheet.merge_range(
         0, 2, 0, 2 + colspan_drives,
         'Drive Data',
@@ -442,7 +445,7 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
     # Create cells for all the mfrs along row 2
     curr_col: int = 2
     for curr_mfr in sorted(drive_models_per_mfr):
-        cols_for_this_mfr: int = drive_models_per_mfr[curr_mfr] * 6
+        cols_for_this_mfr: int = drive_models_per_mfr[curr_mfr] * cols_per_drive_model
         excel_sheet.merge_range(
             1, curr_col, 1, curr_col + cols_for_this_mfr - 1,
             curr_mfr,
@@ -456,11 +459,11 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
     for curr_mfr in sorted(afr_by_mfr_model_qtr):
         for curr_model in sorted(afr_by_mfr_model_qtr[curr_mfr]):
             excel_sheet.merge_range(
-                2, curr_col, 2, curr_col + 5,
+                2, curr_col, 2, curr_col + cols_per_drive_model - 1,
                 curr_model,
                 mfr_center_format[curr_mfr]
             )
-            curr_col += 6
+            curr_col += cols_per_drive_model
 
     # Write "AFR" and "Deploy Count" for each drive model
     curr_col = 2
@@ -472,11 +475,11 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
                 mfr_center_format[curr_mfr]
             )
             excel_sheet.merge_range(
-                3, curr_col + 2, 3, curr_col + 5,
+                3, curr_col + 2, 3, curr_col + cols_per_drive_model - 1,
                 "Drives",
                 mfr_center_format[curr_mfr]
             )
-            curr_col += 6
+            curr_col += cols_per_drive_model
 
     # Add alternating cells for Value and Delta for all cells
     curr_col = 2
@@ -488,9 +491,11 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
             excel_sheet.write(4, curr_col + 1, "Delta", mfr_right_format[curr_mfr] )
             excel_sheet.write(4, curr_col + 2, "Count", mfr_right_format[curr_mfr] )
             excel_sheet.write(4, curr_col + 3, "Delta", mfr_right_format[curr_mfr] )
-            excel_sheet.write(4, curr_col + 4, "Failed", mfr_right_format[curr_mfr])
+            excel_sheet.write(4, curr_col + 4, "New", mfr_right_format[curr_mfr])
             excel_sheet.write(4, curr_col + 5, "Retired", mfr_right_format[curr_mfr])
-            curr_col += 6
+            excel_sheet.write(4, curr_col + 6, "Failed", mfr_right_format[curr_mfr])
+
+            curr_col += cols_per_drive_model
 
     # print(f"\tHeader rows added to sheet")
 
@@ -530,6 +535,8 @@ def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
         }
     )
 
+    cols_per_drive_model: int = 7
+
     for curr_mfr in sorted(afr_by_mfr_model_qtr):
         for curr_model in sorted(afr_by_mfr_model_qtr[curr_mfr]):
             curr_year_quarter = (1, 1)
@@ -552,11 +559,12 @@ def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
                                   int_format)
 
                 # Deploy Count Delta
+                deploy_count_delta: int = display_data['unique_drives_deployed'] - prev_model_quarter_values[1]
                 excel_sheet.write(curr_row, curr_col + 3,
-                                  display_data['unique_drives_deployed'] - prev_model_quarter_values[1],
+                                  deploy_count_delta,
                                   int_format)
 
-                # Failed
+                # New
                 excel_sheet.write(curr_row, curr_col + 4,
                                   None,
                                   int_format)
@@ -564,6 +572,11 @@ def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
                 # Retired
                 excel_sheet.write(curr_row, curr_col + 5,
                                   None,
+                                  int_format)
+
+                # Failed
+                excel_sheet.write(curr_row, curr_col + 6,
+                                  display_data['failure_count'],
                                   int_format)
 
                 # Update values for prev qtr
@@ -580,20 +593,21 @@ def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
 
             # Handle any rows from here to max
             for curr_row in range(curr_row, max_num_data_rows + 5):
-                for col_offset in range(6):
+                for col_offset in range(cols_per_drive_model):
                     excel_sheet.write(curr_row, curr_col + col_offset, None, blank_with_border_format)
 
             # Increment display column four to move to next model
-            curr_col += 6
+            curr_col += cols_per_drive_model
 
 
 def _xlsx_create_multi_range(total_model_count: int, max_num_data_rows: int, start_col: int) -> str:
     start_row: int = 6
     end_row: int = start_row + max_num_data_rows - 1
+    cols_per_drive_model: int = 7
 
     col_letter_indexes: list[str] = []
 
-    for col_index in range(start_col, (6 * total_model_count) + start_col, 6):
+    for col_index in range(start_col, (cols_per_drive_model * total_model_count) + start_col, cols_per_drive_model):
         curr_col_letter_index: str = ""
         letter_prefix_index: int = col_index // 26
         if letter_prefix_index > 0:
@@ -625,6 +639,25 @@ def _xlsx_add_color_scales(total_model_count: int,
     _xlsx_afr_delta_color_scales(total_model_count, max_num_data_rows, excel_sheet)
     _xlsx_afr_drive_count_color_scales(total_model_count, max_num_data_rows, excel_sheet)
     _xlsx_afr_drive_count_delta_color_scales(total_model_count, max_num_data_rows, excel_sheet)
+    # New
+    # Retired
+    _xlsx_afr_drive_failed_color_scales(total_model_count, max_num_data_rows, excel_sheet)
+
+
+def _xlsx_afr_drive_failed_color_scales(total_model_count, max_num_data_rows, excel_sheet) -> None:
+    start_col_offset: int = ord('I') - ord('A')
+    multi_range_value: str = _xlsx_create_multi_range(total_model_count, max_num_data_rows, start_col_offset)
+    #print(f"AFR delta ranges: {multi_range_value}")
+
+    color_scale: dict[str, str | float] = {
+        'type'          : '3_color_scale',
+        'min_color'     : '#00FF00',
+        'mid_color'     : '#FFFF00',
+        'max_color'     : '#FF0000',
+        'multi_range'   : multi_range_value,
+    }
+
+    excel_sheet.conditional_format(multi_range_value.split()[0], color_scale )
 
 
 def _xlsx_afr_drive_count_delta_color_scales(total_model_count, max_num_data_rows, excel_sheet) -> None:
