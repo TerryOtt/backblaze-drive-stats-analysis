@@ -830,7 +830,7 @@ def _add_drives_deployed_removed_each_qtr(args: argparse.Namespace,
 
     # Get new deploys per quarter for each drive model
     new_drives_deployed_per_quarter_data_pull_start: float = time.perf_counter()
-    drives_deployed_per_model_per_quarter: polars.DataFrame = source_lazyframe.join(
+    drives_deployed_removed_dates: polars.DataFrame = source_lazyframe.join(
         smart_model_name_mappings_dataframe.lazy(),
         left_on="model",
         right_on="drive_model_name_smart",
@@ -840,41 +840,35 @@ def _add_drives_deployed_removed_each_qtr(args: argparse.Namespace,
     ).agg(
         polars.col("date").min().dt.year().alias("deploy_year"),
         polars.col("date").min().dt.quarter().alias("deploy_quarter"),
-    ).group_by(
-        "model_name",
-        "deploy_year",
-        "deploy_quarter",
-    ).agg(
-        polars.col("serial_number").count().alias("new_drives"),
+        polars.col("date").max().dt.year().alias("final_year"),
+        polars.col("date").max().dt.quarter().alias("final_quarter")
     ).collect()
 
     new_drives_deployed_per_quarter_data_pull_duration: float = time.perf_counter() - new_drives_deployed_per_quarter_data_pull_start
-    print(f"\tNew drives deployed data pulled in {new_drives_deployed_per_quarter_data_pull_duration:.01f} seconds")
+    # print(f"\tDrive deployed/removed data pulled in {new_drives_deployed_per_quarter_data_pull_duration:.01f} seconds")
 
+
+    drives_deployed_per_model_per_quarter: polars.DataFrame = drives_deployed_removed_dates.group_by(
+        "model_name",
+        "deploy_year",
+        "deploy_quarter"
+    ).agg(
+        polars.col("serial_number").count().alias("new_drives")
+    )
     # print(drives_deployed_per_model_per_quarter)
 
-    # Get drives removed quarter for each drive model
-    drives_removed_per_quarter_data_pull_start: float = time.perf_counter()
-    drives_removed_per_model_per_quarter: polars.DataFrame = source_lazyframe.join(
-        smart_model_name_mappings_dataframe.lazy(),
-        left_on="model",
-        right_on="drive_model_name_smart",
-    ).group_by(
-        polars.col("drive_model_name_normalized").alias("model_name"),
-        polars.col("serial_number"),
-    ).agg(
-        polars.col("date").max().dt.year().alias("remove_year"),
-        polars.col("date").max().dt.quarter().alias("remove_quarter"),
-    ).group_by(
+    drives_removed_per_model_per_quarter: polars.DataFrame = drives_deployed_removed_dates.group_by(
         "model_name",
-        "remove_year",
-        "remove_quarter",
+        "final_year",
+        "final_quarter"
     ).agg(
-        polars.col("serial_number").count().alias("removed_drives"),
-    ).collect()
+        polars.col("serial_number").count().alias("removed_drives")
+    )
 
-    drives_removed_per_quarter_data_pull_duration: float = time.perf_counter() - drives_removed_per_quarter_data_pull_start
-    print(f"\tDrives removed data pulled in {drives_removed_per_quarter_data_pull_duration:.01f} seconds")
+    # print(drives_removed_per_model_per_quarter)
+
+    del drives_deployed_removed_dates
+
 
     # Add two new columns to afr_data
     enriched_data: polars.DataFrame = afr_data.join(
@@ -884,8 +878,8 @@ def _add_drives_deployed_removed_each_qtr(args: argparse.Namespace,
         how = "left",   # Left join, right table may not have a match
     ).join(
         drives_removed_per_model_per_quarter,
-        left_on =  [ "model_name", "year",        "quarter" ],
-        right_on = [ "model_name", "remove_year", "remove_quarter"],
+        left_on =  [ "model_name", "year",       "quarter" ],
+        right_on = [ "model_name", "final_year", "final_quarter"],
         how = "left",   # Left join, right table may not have a match
     ).select(
         "model_name",
@@ -904,10 +898,13 @@ def _add_drives_deployed_removed_each_qtr(args: argparse.Namespace,
 
     # print(enriched_data)
 
+    del drives_deployed_per_model_per_quarter
+    del drives_removed_per_model_per_quarter
+
     viz_data: XlsxVizDataPerDriveModelQuarterType = _create_xlsx_viz_data(args, enriched_data)
 
     pipeline_stage_duration: float = time.perf_counter() - pipeline_stage_start
-    print(f"\tStage duration: {pipeline_stage_duration:.01f} seconds")
+    print(f"\tData enriched with quarterly drive deloys/removals in {pipeline_stage_duration:.01f} seconds")
 
     return viz_data
 
@@ -997,11 +994,10 @@ def _main() -> None:
     viz_data_by_mfr_model_quarter: XlsxVizDataPerDriveModelQuarterType = _add_drives_deployed_removed_each_qtr(
         args, original_source_lazyframe, smart_model_name_mappings_dataframe, afr_by_mfr_model_quarter)
 
-    # generated_xlsx_file_path: str = _generate_output_xlsx(args, viz_data_by_mfr_model_quarter )
+    generated_xlsx_file_path: str = _generate_output_xlsx(args, viz_data_by_mfr_model_quarter )
 
-    #if generated_xlsx_file_path.startswith("s3://"):
-        #_copy_xlsx_to_s3(args, generated_xlsx_file_path)
-        # pass
+    if generated_xlsx_file_path.startswith("s3://"):
+        raise NotImplementedError()  
 
     processing_duration: float = time.perf_counter() - processing_start
     print(f"\nETL pipeline total processing time: {processing_duration:.01f} seconds\n")
