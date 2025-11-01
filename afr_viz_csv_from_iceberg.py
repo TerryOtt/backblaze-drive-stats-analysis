@@ -508,26 +508,21 @@ def _xlsx_add_data_rows(afr_by_mfr_model_qtr: AfrPerDriveModelQuarterType,
             curr_col += 4
 
 
-def _xlsx_add_color_scales(total_model_count: int,
-                           max_num_data_rows: int,
-                           excel_sheet: xlsxwriter.workbook.Worksheet ) -> None:
-
+def _xlsx_create_multi_range(total_model_count: int, max_num_data_rows: int, start_col: int) -> str:
     start_row: int = 6
-    end_row: int = 6 + max_num_data_rows - 1
+    end_row: int = start_row + max_num_data_rows - 1
 
-    # Create list of column letters. Start at C, increment by four for each model.
-    #   After Z, wrap around and do AA, AB, etc
     col_letter_indexes: list[str] = []
-    for col_index in range(3, (4 * total_model_count) + 3, 4):
+
+    for col_index in range(start_col, (4 * total_model_count) + start_col, 4):
         curr_col_letter_index: str = ""
         letter_prefix_index: int = col_index // 26
         if letter_prefix_index > 0:
-            # 1 = A, 26 = Z
-            curr_col_letter_index = chr(ord('@') + letter_prefix_index)
+            curr_col_letter_index = chr(ord('A') + letter_prefix_index - 1)
 
         # Now deal with last letter
         letter_suffix_index: int = col_index % 26
-        curr_col_letter_index += chr(ord('@') + letter_suffix_index)
+        curr_col_letter_index += chr(ord('A') + letter_suffix_index)
         # print(f"Col index {col_index} got suffix index {letter_suffix_index} and letter {chr(ord('@') + letter_suffix_index)}")
 
         col_letter_indexes.append(curr_col_letter_index)
@@ -540,9 +535,48 @@ def _xlsx_add_color_scales(total_model_count: int,
 
     multi_range_value:str = " ".join(cols_plus_rows)
 
-    # print(f"Multi-range val: {multi_range_value}")
+    return multi_range_value
 
-    afr_value_color_scale: dict[str, str | float] = {
+
+def _xlsx_add_color_scales(total_model_count: int,
+                           max_num_data_rows: int,
+                           excel_sheet: xlsxwriter.workbook.Worksheet ) -> None:
+
+    _xlsx_afr_value_color_scales(total_model_count, max_num_data_rows, excel_sheet)
+    _xlsx_afr_delta_color_scales(total_model_count, max_num_data_rows, excel_sheet)
+
+
+def _xlsx_afr_delta_color_scales(total_model_count: int,
+                                 max_num_data_rows: int,
+                                 excel_sheet: xlsxwriter.workbook.Worksheet) -> None:
+
+    start_col_offset: int = ord('D') - ord('A')
+    multi_range_value: str = _xlsx_create_multi_range(total_model_count, max_num_data_rows, start_col_offset)
+    print(f"AFR delta ranges: {multi_range_value}")
+
+    color_scale: dict[str, str | float] = {
+        'type'          : '3_color_scale',
+        'min_color'     : '#00FF00',
+        'mid_type'      : 'num',
+        'mid_value'     : 0.0,
+        'mid_color'     : '#FFFFFF',
+        'max_color'     : '#FF0000',
+        'multi_range'   : multi_range_value,
+    }
+
+    excel_sheet.conditional_format(multi_range_value.split()[0], color_scale )
+
+
+def _xlsx_afr_value_color_scales(total_model_count: int,
+                                 max_num_data_rows: int,
+                                 excel_sheet: xlsxwriter.workbook.Worksheet) -> None:
+
+    start_col_offset: int = ord('C') - ord('A')
+    multi_range_value: str = _xlsx_create_multi_range(total_model_count, max_num_data_rows, start_col_offset)
+
+    print(f"AFR value ranges: {multi_range_value}")
+
+    color_scale: dict[str, str | float] = {
         'type'          : '3_color_scale',
         'min_color'     : '#00FF00',
         'mid_type'      : 'num',
@@ -554,7 +588,7 @@ def _xlsx_add_color_scales(total_model_count: int,
         'multi_range'   : multi_range_value,
     }
 
-    excel_sheet.conditional_format("C6:C32", afr_value_color_scale )
+    excel_sheet.conditional_format(multi_range_value.split()[0], color_scale )
 
 
 def _xlsx_add_year_quarter_rows(num_data_rows: int,
@@ -562,6 +596,7 @@ def _xlsx_add_year_quarter_rows(num_data_rows: int,
                                 excel_sheet: xlsxwriter.workbook.Worksheet) -> None:
     year_quarter_format: xlsxwriter.workbook.Format = excel_workbook.add_format(
         {
+            'bold': True,
             'align': 'center',
             'valign': 'vcenter',
             'border': 1,
@@ -626,6 +661,8 @@ def _generate_output_xlsx(args: argparse.Namespace,
         _xlsx_add_data_rows(quarterly_afr_by_drive_model, max_data_row_count, excel_workbook, excel_sheet)
         _xlsx_add_color_scales(total_model_count, max_data_row_count, excel_sheet)
 
+        # Sadly autofit didn't work well
+        # excel_sheet.autofit()
 
     print("\tXLSX file successfully generated")
     return generated_xlsx_path
