@@ -990,18 +990,18 @@ def _main() -> None:
     # Can delete SMART drive model name series as its no longer used
     del smart_drive_model_names
 
-    afr_by_mfr_model_quarter: polars.DataFrame = _do_quarterly_afr_calculations(
-        original_source_lazyframe, smart_model_name_mappings_dataframe )
+    afr_by_mfr_model_quarter: polars.DataFrame = _do_quarterly_afr_calculations(original_source_lazyframe, 
+                                                                                smart_model_name_mappings_dataframe )
 
     # Add drives deployed and removed each quarter to our dataframe
     viz_data_by_mfr_model_quarter: XlsxVizDataPerDriveModelQuarterType = _add_drives_deployed_removed_each_qtr(
         args, original_source_lazyframe, smart_model_name_mappings_dataframe, afr_by_mfr_model_quarter)
 
-    generated_xlsx_file_path: str = _generate_output_xlsx(args, viz_data_by_mfr_model_quarter )
+    # generated_xlsx_file_path: str = _generate_output_xlsx(args, viz_data_by_mfr_model_quarter )
 
-    if generated_xlsx_file_path.startswith("s3://"):
+    #if generated_xlsx_file_path.startswith("s3://"):
         #_copy_xlsx_to_s3(args, generated_xlsx_file_path)
-        pass
+        # pass
 
     processing_duration: float = time.perf_counter() - processing_start
     print(f"\nETL pipeline total processing time: {processing_duration:.01f} seconds\n")
