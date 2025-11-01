@@ -904,7 +904,7 @@ def _add_drives_deployed_removed_each_qtr(args: argparse.Namespace,
     viz_data: XlsxVizDataPerDriveModelQuarterType = _create_xlsx_viz_data(args, enriched_data)
 
     pipeline_stage_duration: float = time.perf_counter() - pipeline_stage_start
-    print(f"\tData enriched with quarterly drive deloys/removals in {pipeline_stage_duration:.01f} seconds")
+    print(f"\tData enriched with quarterly drive deploys/removals in {pipeline_stage_duration:.01f} seconds")
 
     return viz_data
 
