@@ -10,8 +10,8 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Get drive model distributions over time")
 
     default_min_drives: int = 0
-    parser.add_argument('--min-drives', help="Minimum number of deployed drives to be included, default: " +
-                        f"{default_min_drives:,}",
+    parser.add_argument('--min-drives',
+                        help=f"Minimum number of deployed drives to be included, default: {default_min_drives:,}",
                         type=int, default=default_min_drives)
 
     default_s3_endpoint: str = "https://s3.us-west-004.backblazeb2.com"
