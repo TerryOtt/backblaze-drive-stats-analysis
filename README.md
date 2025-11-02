@@ -31,6 +31,11 @@ $ sudo apt-get -y install python3-venv
 $ python3 -m venv .venv
 $ source .venv/bin/activate
 $ pip3 install -r requirements.txt
+```
+
+### Running The Script
+
+```
 $ python3 quarterly_afr_xlsx_from_iceberg.py 	        \
     drives_of_interest_regexes.json     		        \
     [s3_access_key]                     		        \
