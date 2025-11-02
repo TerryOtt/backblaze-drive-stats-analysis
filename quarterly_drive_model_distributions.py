@@ -1,4 +1,5 @@
 import argparse
+import time
 import typing
 
 import polars
@@ -10,8 +11,8 @@ import etl_pipeline
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Get drive model distributions over time")
 
-    default_min_drives: int = 2_000
-    parser.add_argument('--min-drives', help="Minimum number of deployed drives for model, default: " +
+    default_min_drives: int = 0
+    parser.add_argument('--min-drives', help="Minimum number of deployed drives to be included, default: " +
                         f"{default_min_drives:,}",
                         type=int, default=default_min_drives)
 
@@ -74,32 +75,47 @@ def _main() -> None:
         smart_model_name_mappings_dataframe.lazy(),
         left_on="model",
         right_on="drive_model_name_smart",
-    # ).select(
-    #     "date",
-    #     "drive_model_name_normalized",
-    #     "serial_number",
+    ).select(
+        "date",
+        "drive_model_name_normalized",
+        "serial_number",
     )
     # print(source_lazyframe.collect_schema())
 
     print(etl_pipeline.next_stage_banner())
+    stage_begin: float = time.perf_counter()
+    print("\tMaterializing drive model distribution data")
     quarterly_drive_distribution_data: polars.DataFrame = source_lazyframe.group_by(
-        "drive_model_name_normalized",
+        polars.col("drive_model_name_normalized").alias("model_name"),
         polars.col("date").dt.year().alias("year"),
         polars.col("date").dt.quarter().alias("quarter"),
     ).agg(
-        polars.col("serial_number").unique().count().alias("qtr_unique_serial_numbers"),
-    ).collect().select(
+        polars.col("serial_number").unique().count().alias("unique_serial_numbers"),
+    ).filter(
+        polars.col("unique_serial_numbers").ge(args.min_drives)
+    ).select(
         "year",
         "quarter",
-        "drive_model_name_normalized",
-        "qtr_unique_serial_numbers"
+        "model_name",
+        "unique_serial_numbers"
     ).sort(
-        "year",
-        "quarter",
-        "drive_model_name_normalized",
-    )
+        [
+            "year",
+            "quarter",
+            "unique_serial_numbers",
+        ],
+        descending=[
+            True,
+            True,
+            True,
+        ]
+    ).collect()
 
     print(quarterly_drive_distribution_data)
+
+    stage_duration: float = time.perf_counter() - stage_begin
+    print(f"\tStage duration: {stage_duration:.01f} seconds")
+
 
 if __name__ == "__main__":
     _main()
