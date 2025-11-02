@@ -58,16 +58,43 @@ def _main() -> None:
 
     pipeline_stage_descriptions: tuple[str, ...] = (
         "Create normalized drive model name mappings",
+        "Update source lazyframe with normalized drive model names and filtered columns",
+        "Create quarterly drive model distribution data",
     )
 
     etl_pipeline.create_pipeline(pipeline_stage_descriptions)
-
 
     print( etl_pipeline.next_stage_banner() )
     smart_model_name_mappings_dataframe: polars.DataFrame = backblaze_drive_stats_data.get_smart_drive_model_mappings(
         args, source_lazyframe)
 
+    print(etl_pipeline.next_stage_banner())
+    # update lazyframe with name mappings
+    source_lazyframe = source_lazyframe.join(
+        smart_model_name_mappings_dataframe.lazy(),
+        left_on="model",
+        right_on="drive_model_name_smart",
+    # ).select(
+    #     "date",
+    #     "drive_model_name_normalized",
+    #     "serial_number",
+    )
+    # print(source_lazyframe.collect_schema())
 
+    print(etl_pipeline.next_stage_banner())
+    quarterly_drive_distribution_data: polars.DataFrame = source_lazyframe.group_by(
+        "drive_model_name_normalized",
+        polars.col("date").dt.year().alias("year"),
+        polars.col("date").dt.year().alias("quarter"),
+    ).agg(
+        polars.col("serial_number").unique().count().alias("qtr_unique_serial_numbers"),
+    ).collect().sort(
+        "year",
+        "quarter"
+        "drive_model_name_normalized",
+    )
+
+    print(quarterly_drive_distribution_data)
 
 if __name__ == "__main__":
     _main()
