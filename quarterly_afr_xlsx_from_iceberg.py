@@ -1,6 +1,5 @@
 import argparse
 import boto3
-import datetime
 import json
 import pathlib
 import polars
@@ -777,7 +776,7 @@ def _get_max_data_row_count(quarterly_afr_by_drive_model: XlsxVizDataPerDriveMod
 def _generate_output_xlsx(xlsx_path_or_file_handle: str | typing.IO[bytes],
                           quarterly_afr_by_drive_model: XlsxVizDataPerDriveModelQuarterType ) -> None:
 
-    print("\nETL pipeline stage 5 of 5: Generating XLSX for visualizing Backblaze drive stats quarterly data...")
+    print("\nETL pipeline stage 5 of 5: Generate output XLSX with Backblaze drive stats quarterly data...")
 
     generated_xlsx_path: str
 
@@ -802,7 +801,7 @@ def _add_drives_deployed_removed_each_qtr(args: argparse.Namespace,
                                           smart_model_name_mappings_dataframe: polars.DataFrame,
                                           afr_data:polars.DataFrame) -> XlsxVizDataPerDriveModelQuarterType:
 
-    print("\nETL pipeline stage 4 of 5: Enrich viz data with quarterly drive deploys/removals...")
+    print("\nETL pipeline stage 4 of 5: Enrich data with quarterly drive deploys/removals...")
 
     pipeline_stage_start: float = time.perf_counter()
 
