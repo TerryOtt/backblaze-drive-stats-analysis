@@ -61,6 +61,7 @@ def _main() -> None:
         "Create normalized drive model name mappings",
         "Update source lazyframe with normalized drive model names and filtered columns",
         "Create quarterly drive model distribution data",
+        "Calculate total drives deployed per quarter",
     )
 
     etl_pipeline.create_pipeline(pipeline_stage_descriptions)
@@ -81,10 +82,11 @@ def _main() -> None:
         "serial_number",
     )
     # print(source_lazyframe.collect_schema())
+    print("\tCompleted")
 
     print(etl_pipeline.next_stage_banner())
     stage_begin: float = time.perf_counter()
-    print("\tMaterializing drive model distribution data")
+    print("\tMaterializing drive model distribution data...")
     quarterly_drive_distribution_data: polars.DataFrame = source_lazyframe.group_by(
         polars.col("drive_model_name_normalized").alias("model_name"),
         polars.col("date").dt.year().alias("year"),
@@ -111,10 +113,32 @@ def _main() -> None:
         ]
     ).collect()
 
-    print(quarterly_drive_distribution_data)
+    # print(quarterly_drive_distribution_data)
+    print("\t\tCompleted")
 
     stage_duration: float = time.perf_counter() - stage_begin
     print(f"\tStage duration: {stage_duration:.01f} seconds")
+
+
+    print(etl_pipeline.next_stage_banner())
+    total_drives_per_quarter: polars.DataFrame = quarterly_drive_distribution_data.group_by(
+        "year", "quarter"
+    ).agg(
+        polars.col("unique_serial_numbers").sum().alias("total_drives"),
+    ).sort(
+        [
+            "year",
+            "quarter",
+        ],
+        descending=[
+            True,
+            True,
+        ]
+    )
+
+    # print(total_drives_per_quarter)
+
+    print("\tCompleted")
 
 
 if __name__ == "__main__":
