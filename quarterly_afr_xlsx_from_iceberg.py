@@ -787,7 +787,7 @@ def _get_max_data_row_count(quarterly_afr_by_drive_model: XlsxVizDataPerDriveMod
     return max_data_rows
 
 
-def _generate_output_xlsx(xlsx_path_or_file_handle: str | typing.BinaryIO,
+def _generate_output_xlsx(xlsx_path_or_file_handle: str | typing.IO[bytes],
                           quarterly_afr_by_drive_model: XlsxVizDataPerDriveModelQuarterType ) -> None:
 
     print("\nETL pipeline stage 5 of 5: Generating XLSX for visualizing Backblaze drive stats quarterly data...")
@@ -965,6 +965,7 @@ def _copy_to_s3(source_bytes: bytes, dest_s3_path: str) -> None:
     s3_tokens: list[str] = dest_s3_path.split('/')
     s3_bucket_name: str = s3_tokens[2]
     s3_bucket_key: str = '/'.join(s3_tokens[3:])
+
     boto3.client('s3').put_object(Bucket       = s3_bucket_name, 
                                   Key          = s3_bucket_key, 
                                   Body         = source_bytes, 
