@@ -1,10 +1,13 @@
 import argparse
+import boto3
 import datetime
 import json
 import pathlib
 import polars
 import re
+import tempfile
 import time
+import typing
 import xlsxwriter
 
 import iceberg_table
@@ -784,26 +787,17 @@ def _get_max_data_row_count(quarterly_afr_by_drive_model: XlsxVizDataPerDriveMod
     return max_data_rows
 
 
-def _generate_output_xlsx(args: argparse.Namespace,
-                          quarterly_afr_by_drive_model: XlsxVizDataPerDriveModelQuarterType ) -> str:
+def _generate_output_xlsx(xlsx_path_or_file_handle: str | typing.BinaryIO,
+                          quarterly_afr_by_drive_model: XlsxVizDataPerDriveModelQuarterType ) -> None:
 
-    print("\nETL pipeline stage 5 of 5: Generating XLSX for visualizing Backblaze drive stats AFR data...")
+    print("\nETL pipeline stage 5 of 5: Generating XLSX for visualizing Backblaze drive stats quarterly data...")
 
     generated_xlsx_path: str
-
-    # Find out if we are generating a temp file that gets copied to S3, or a filesystem URL
-    if args.output_xlsx.startswith("s3://"):
-        # generated_xlsx_path = (create temp file name)
-        raise NotImplementedError("S3 URL paths for XLSX not implemented yet")
-    else:
-        generated_xlsx_path = args.output_xlsx
-
-    print(f"\tOutput XLSX path: {generated_xlsx_path}")
 
     total_model_count: int = _get_total_model_count(quarterly_afr_by_drive_model)
     max_data_row_count: int = _get_max_data_row_count(quarterly_afr_by_drive_model)
 
-    with xlsxwriter.Workbook(generated_xlsx_path) as excel_workbook:
+    with xlsxwriter.Workbook(xlsx_path_or_file_handle) as excel_workbook:
         excel_sheet: xlsxwriter.workbook.Worksheet = excel_workbook.add_worksheet()
         _xlsx_add_header_rows(quarterly_afr_by_drive_model, total_model_count, excel_workbook, excel_sheet)
         _xlsx_add_year_quarter_rows(max_data_row_count, excel_workbook, excel_sheet)
@@ -815,16 +809,13 @@ def _generate_output_xlsx(args: argparse.Namespace,
 
         excel_sheet.freeze_panes(5, 2)
 
-    print("\tXLSX file successfully generated")
-    return generated_xlsx_path
-
 
 def _add_drives_deployed_removed_each_qtr(args: argparse.Namespace,
                                           source_lazyframe: polars.LazyFrame,
                                           smart_model_name_mappings_dataframe: polars.DataFrame,
                                           afr_data:polars.DataFrame) -> XlsxVizDataPerDriveModelQuarterType:
 
-    print("\nETL pipeline stage 4 of 5: Count new drive deploys and drive removals per model per quarter...")
+    print("\nETL pipeline stage 4 of 5: Enrich viz data with quarterly drive deploys/removals...")
 
     pipeline_stage_start: float = time.perf_counter()
 
@@ -969,6 +960,17 @@ def _create_xlsx_viz_data(args: argparse.Namespace,
     return afr_by_mfr_model_quarter
 
 
+
+def _copy_to_s3(source_bytes: bytes, dest_s3_path: str) -> None:
+    s3_tokens: list[str] = dest_s3_path.split('/')
+    s3_bucket_name: str = s3_tokens[2]
+    s3_bucket_key: str = '/'.join(s3_tokens[3:])
+    boto3.client('s3').put_object(Bucket       = s3_bucket_name, 
+                                  Key          = s3_bucket_key, 
+                                  Body         = source_bytes, 
+                                  StorageClass = 'GLACIER_IR')
+                                  
+
 def _main() -> None:
 
     processing_start: float = time.perf_counter()
@@ -990,10 +992,16 @@ def _main() -> None:
     viz_data_by_mfr_model_quarter: XlsxVizDataPerDriveModelQuarterType = _add_drives_deployed_removed_each_qtr(
         args, original_source_lazyframe, smart_model_name_mappings_dataframe, afr_by_mfr_model_quarter)
 
-    generated_xlsx_file_path: str = _generate_output_xlsx(args, viz_data_by_mfr_model_quarter )
+    if args.output_xlsx.startswith("s3://"):
+        with tempfile.TemporaryFile(suffix=".xlsx") as tempfile_handle:
+            _generate_output_xlsx(tempfile_handle, viz_data_by_mfr_model_quarter)
+            tempfile_handle.seek(0)
+            binary_content: bytes = tempfile_handle.read()
+        _copy_to_s3(binary_content, args.output_xlsx)
+    else:
+        _generate_output_xlsx(args.output_xlsx, viz_data_by_mfr_model_quarter )
 
-    if generated_xlsx_file_path.startswith("s3://"):
-        raise NotImplementedError()  
+    print(f"\tCreated output XLSX: {args.output_xlsx}")
 
     processing_duration: float = time.perf_counter() - processing_start
     print(f"\nETL pipeline total processing time: {processing_duration:.01f} seconds\n")
