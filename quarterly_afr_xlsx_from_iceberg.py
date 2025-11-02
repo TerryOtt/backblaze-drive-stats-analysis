@@ -987,7 +987,7 @@ def _main() -> None:
     else:
         _generate_output_xlsx(args.output_xlsx, viz_data_by_mfr_model_quarter )
 
-    print(f"\tCreated output XLSX: {args.output_xlsx}")
+    print(f"\tCreated output XLSX: \"{args.output_xlsx}\"")
 
     processing_duration: float = time.perf_counter() - processing_start
     print(f"\nETL pipeline total processing time: {processing_duration:.01f} seconds\n")
