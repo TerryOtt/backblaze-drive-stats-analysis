@@ -136,17 +136,6 @@ def _source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
     return source_lazyframe
 
 
-def _increment_datetime_one_quarter(dt: datetime.date) -> datetime.date:
-    incremented_year: int
-    incremented_month: int = (dt.month + 3) % 12
-    if incremented_month == 1:
-        incremented_year = dt.year + 1
-    else:
-        incremented_year = dt.year
-
-    return datetime.date(incremented_year, incremented_month, 1)
-
-
 def _afr_calc(cumulative_drive_days: int, cumulative_drive_failures: int) -> float:
     # Scaling factor is 365 unit-days / year
     afr_scaling_factor: float = 365.0
@@ -250,7 +239,6 @@ def _do_quarterly_afr_calculations(
         "year",
         "quarter"
     )
-
 
     # print(json.dumps(afr_by_mfr_model_quarter, indent=4, sort_keys=True))
 
@@ -364,7 +352,6 @@ def _xlsx_add_header_rows(afr_by_mfr_model_qtr: XlsxVizDataPerDriveModelQuarterT
             }
         ),
     }
-
 
     # Compute number of drive models for each manufacturer
     drive_models_per_mfr: dict[str, int] = {}
@@ -958,7 +945,6 @@ def _create_xlsx_viz_data(args: argparse.Namespace,
                     last_quarter_data['qtr_removed_drives'] = last_quarter_data['failure_count']
 
     return afr_by_mfr_model_quarter
-
 
 
 def _copy_to_s3(source_bytes: bytes, dest_s3_path: str) -> None:
