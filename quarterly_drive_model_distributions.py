@@ -1,7 +1,5 @@
 import argparse
 import time
-import typing
-
 import polars
 
 import backblaze_drive_stats_data
@@ -48,8 +46,6 @@ def _parse_args() -> argparse.Namespace:
 
     parser.add_argument("output_xlsx", help="Path to output visualization XLSX file (s3:// supported)")
     return parser.parse_args()
-
-
 
 
 def _main() -> None:
