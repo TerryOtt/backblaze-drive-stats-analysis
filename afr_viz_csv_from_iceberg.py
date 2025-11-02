@@ -819,11 +819,6 @@ def _generate_output_xlsx(args: argparse.Namespace,
     return generated_xlsx_path
 
 
-def _correct_final_quarter_of_data(source_lazyframe: polars.LazyFrame,
-                                   drives_deployed_removed_dates: polars.DataFrame) -> None:
-    raise NotImplementedError()
-
-
 def _add_drives_deployed_removed_each_qtr(args: argparse.Namespace,
                                           source_lazyframe: polars.LazyFrame,
                                           smart_model_name_mappings_dataframe: polars.DataFrame,
@@ -834,7 +829,6 @@ def _add_drives_deployed_removed_each_qtr(args: argparse.Namespace,
     pipeline_stage_start: float = time.perf_counter()
 
     # Get new deploys per quarter for each drive model
-    new_drives_deployed_per_quarter_data_pull_start: float = time.perf_counter()
     drives_deployed_removed_dates: polars.DataFrame = source_lazyframe.join(
         smart_model_name_mappings_dataframe.lazy(),
         left_on="model",
@@ -847,54 +841,29 @@ def _add_drives_deployed_removed_each_qtr(args: argparse.Namespace,
         polars.col("date").max().alias("last_seen")
     ).collect()
 
-    # Drives last seen in the final quarter of data aren't necessarily removed, they may still be
-    #   in service
-    # _correct_final_quarter_of_data(source_lazyframe, drives_deployed_removed_dates)
-
-    new_drives_deployed_per_quarter_data_pull_duration: float = time.perf_counter() - \
-                                                                new_drives_deployed_per_quarter_data_pull_start
-    # print(f"\tDrive deployed/removed data pulled in {new_drives_deployed_per_quarter_data_pull_duration:.01f} seconds")
-
-    drives_deployed_per_model_per_quarter: polars.DataFrame = drives_deployed_removed_dates.select(
+    drives_deployed_per_model_per_quarter: polars.DataFrame = drives_deployed_removed_dates.group_by(
         "model_name",
         polars.col("first_seen").dt.year().alias("deploy_year"),
         polars.col("first_seen").dt.quarter().alias("deploy_quarter"),
-        "serial_number",
-    ).group_by(
-        "model_name",
-        "deploy_year",
-        "deploy_quarter"
     ).agg(
         polars.col("serial_number").count().alias("new_drives")
     )
     # print(drives_deployed_per_model_per_quarter)
 
-    # Get most recent year quarter of data in source data so we can filter out data from that quarter
-    most_recent_date_in_data: datetime.date = drives_deployed_removed_dates.select(
-        polars.col("last_seen").max().alias("most_recent_date_in_table")
-    ).item()
-
-    print(f"\tMost recent date in data: {most_recent_date_in_data.isoformat()}")
-
     drives_removed_per_model_per_quarter: polars.DataFrame = drives_deployed_removed_dates.filter(
-        # Ignore drives seen in service on the most recent date in the data
-        polars.col("last_seen").lt(most_recent_date_in_data)
-    ).select(
+        # Ignore drives seen in service on the most recent date in the data; assume
+        #       they survive into next quarter of data
+        polars.col("last_seen").lt( polars.col("last_seen").max() )
+    ).group_by(
         "model_name",
         polars.col("last_seen").dt.year().alias("remove_year"),
         polars.col("last_seen").dt.quarter().alias("remove_quarter"),
-        "serial_number",
-    ).group_by(
-        "model_name",
-        "remove_year",
-        "remove_quarter"
     ).agg(
         polars.col("serial_number").count().alias("removed_drives")
     )
-
     # print(drives_removed_per_model_per_quarter)
 
-    # Drop big source table that's no longer needed
+    # Drop big source table that's no longer needed now that we've aggregated by model and quarter
     del drives_deployed_removed_dates
 
     # Add two new columns to afr_data
