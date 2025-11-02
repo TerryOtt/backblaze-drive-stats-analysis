@@ -85,12 +85,17 @@ def _main() -> None:
     quarterly_drive_distribution_data: polars.DataFrame = source_lazyframe.group_by(
         "drive_model_name_normalized",
         polars.col("date").dt.year().alias("year"),
-        polars.col("date").dt.year().alias("quarter"),
+        polars.col("date").dt.quarter().alias("quarter"),
     ).agg(
         polars.col("serial_number").unique().count().alias("qtr_unique_serial_numbers"),
-    ).collect().sort(
+    ).collect().select(
         "year",
-        "quarter"
+        "quarter",
+        "drive_model_name_normalized",
+        "qtr_unique_serial_numbers"
+    ).sort(
+        "year",
+        "quarter",
         "drive_model_name_normalized",
     )
 
