@@ -819,6 +819,11 @@ def _generate_output_xlsx(args: argparse.Namespace,
     return generated_xlsx_path
 
 
+def _correct_final_quarter_of_data(source_lazyframe: polars.LazyFrame,
+                                   drives_deployed_removed_dates: polars.DataFrame) -> None:
+    raise NotImplementedError()
+
+
 def _add_drives_deployed_removed_each_qtr(args: argparse.Namespace,
                                           source_lazyframe: polars.LazyFrame,
                                           smart_model_name_mappings_dataframe: polars.DataFrame,
@@ -838,17 +843,24 @@ def _add_drives_deployed_removed_each_qtr(args: argparse.Namespace,
         polars.col("drive_model_name_normalized").alias("model_name"),
         polars.col("serial_number"),
     ).agg(
-        polars.col("date").min().dt.year().alias("deploy_year"),
-        polars.col("date").min().dt.quarter().alias("deploy_quarter"),
-        polars.col("date").max().dt.year().alias("final_year"),
-        polars.col("date").max().dt.quarter().alias("final_quarter")
+        polars.col("date").min().alias("first_seen"),
+        polars.col("date").max().alias("last_seen")
     ).collect()
 
-    new_drives_deployed_per_quarter_data_pull_duration: float = time.perf_counter() - new_drives_deployed_per_quarter_data_pull_start
+    # Drives last seen in the final quarter of data aren't necessarily removed, they may still be
+    #   in service
+    # _correct_final_quarter_of_data(source_lazyframe, drives_deployed_removed_dates)
+
+    new_drives_deployed_per_quarter_data_pull_duration: float = time.perf_counter() - \
+                                                                new_drives_deployed_per_quarter_data_pull_start
     # print(f"\tDrive deployed/removed data pulled in {new_drives_deployed_per_quarter_data_pull_duration:.01f} seconds")
 
-
-    drives_deployed_per_model_per_quarter: polars.DataFrame = drives_deployed_removed_dates.group_by(
+    drives_deployed_per_model_per_quarter: polars.DataFrame = drives_deployed_removed_dates.select(
+        "model_name",
+        polars.col("first_seen").dt.year().alias("deploy_year"),
+        polars.col("first_seen").dt.quarter().alias("deploy_quarter"),
+        "serial_number",
+    ).group_by(
         "model_name",
         "deploy_year",
         "deploy_quarter"
@@ -857,18 +869,33 @@ def _add_drives_deployed_removed_each_qtr(args: argparse.Namespace,
     )
     # print(drives_deployed_per_model_per_quarter)
 
-    drives_removed_per_model_per_quarter: polars.DataFrame = drives_deployed_removed_dates.group_by(
+    # Get most recent year quarter of data in source data so we can filter out data from that quarter
+    most_recent_date_in_data: datetime.date = drives_deployed_removed_dates.select(
+        polars.col("last_seen").max().alias("most_recent_date_in_table")
+    ).item()
+
+    print(f"\tMost recent date in data: {most_recent_date_in_data.isoformat()}")
+
+    drives_removed_per_model_per_quarter: polars.DataFrame = drives_deployed_removed_dates.filter(
+        # Ignore drives seen in service on the most recent date in the data
+        polars.col("last_seen").lt(most_recent_date_in_data)
+    ).select(
         "model_name",
-        "final_year",
-        "final_quarter"
+        polars.col("last_seen").dt.year().alias("remove_year"),
+        polars.col("last_seen").dt.quarter().alias("remove_quarter"),
+        "serial_number",
+    ).group_by(
+        "model_name",
+        "remove_year",
+        "remove_quarter"
     ).agg(
         polars.col("serial_number").count().alias("removed_drives")
     )
 
     # print(drives_removed_per_model_per_quarter)
 
+    # Drop big source table that's no longer needed
     del drives_deployed_removed_dates
-
 
     # Add two new columns to afr_data
     enriched_data: polars.DataFrame = afr_data.join(
@@ -878,8 +905,8 @@ def _add_drives_deployed_removed_each_qtr(args: argparse.Namespace,
         how = "left",   # Left join, right table may not have a match
     ).join(
         drives_removed_per_model_per_quarter,
-        left_on =  [ "model_name", "year",       "quarter" ],
-        right_on = [ "model_name", "final_year", "final_quarter"],
+        left_on =  [ "model_name", "year",        "quarter" ],
+        right_on = [ "model_name", "remove_year", "remove_quarter"],
         how = "left",   # Left join, right table may not have a match
     ).select(
         "model_name",
