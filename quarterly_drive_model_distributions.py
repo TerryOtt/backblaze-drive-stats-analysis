@@ -6,6 +6,9 @@ import backblaze_drive_stats_data
 import etl_pipeline
 
 
+type TotalDrivesPerQuarter = dict[int, dict[int, int]]
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Get drive model distributions over time")
 
@@ -113,28 +116,33 @@ def _get_materialized_drive_distribution_data(args: argparse.Namespace,
     return quarterly_drive_distribution_data
 
 
-def _compute_total_drives_per_quarter(quarterly_drive_distribution_data: polars.DataFrame) -> polars.DataFrame:
+def _compute_total_drives_per_quarter(quarterly_drive_distribution_data: polars.DataFrame) -> TotalDrivesPerQuarter:
     print(etl_pipeline.next_stage_banner())
-    total_drives_per_quarter: polars.DataFrame = quarterly_drive_distribution_data.group_by(
+    total_drives_per_quarter_dataframe: polars.DataFrame = quarterly_drive_distribution_data.group_by(
         "year", "quarter"
     ).agg(
-        polars.col("unique_serial_numbers").sum().alias("total_drives"),
-    ).sort(
-        [
-            "year",
-            "quarter",
-        ],
-        descending=[
-            True,
-            True,
-        ]
+        polars.col("unique_serial_numbers").sum().alias("total_drives")
     )
 
     # print(total_drives_per_quarter)
 
+    drives_per_quarter: TotalDrivesPerQuarter = {}
+
+    for curr_row in total_drives_per_quarter_dataframe.iter_rows():
+        year, quarter, total_drives = curr_row
+        if year not in drives_per_quarter:
+            drives_per_quarter[year]: dict[int, int] = {}
+        drives_per_quarter[year][quarter]: int = total_drives
+
+    # for curr_year in sorted(drives_per_quarter):
+    #     print(f"\t{curr_year}")
+    #     for curr_quarter in sorted(drives_per_quarter[curr_year]):
+    #         print(f"\t\tQ{curr_quarter}: {drives_per_quarter[curr_year][curr_quarter]:9,}")
+    #     print()
+
     print("\tCompleted")
 
-    return total_drives_per_quarter
+    return drives_per_quarter
 
 
 def _main() -> None:
@@ -154,7 +162,7 @@ def _main() -> None:
     quarterly_drive_distribution_data: polars.DataFrame = _get_materialized_drive_distribution_data(
         args, source_lazyframe)
 
-    total_drives_per_quarter: polars.DataFrame = _compute_total_drives_per_quarter(
+    total_drives_per_quarter: TotalDrivesPerQuarter = _compute_total_drives_per_quarter(
         quarterly_drive_distribution_data)
 
 
