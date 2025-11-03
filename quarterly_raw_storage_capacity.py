@@ -100,7 +100,7 @@ def _get_materialized_quarterly_storage_capacity(source_lazyframe: polars.LazyFr
         ]
     ).collect()
 
-    print(quarterly_raw_storage_capacity_dataframe)
+    # print(quarterly_raw_storage_capacity_dataframe)
 
     print("\t\tCompleted")
 
@@ -128,7 +128,9 @@ def _main() -> None:
 
     prev_year: int = 0
 
-    exabytes_in_terabyte: float = 1024 * 1024
+    terabytes_per_petabyte: int = 1024
+    petabytes_per_exabyte: int = 1024
+
     for curr_row in quarterly_raw_storage_capacity_dataframe.iter_rows():
         year, quarter, capacity_tb = curr_row
 
@@ -136,12 +138,11 @@ def _main() -> None:
             print(f"\n{year}")
             prev_year = year
 
-        qtr_exabytes: float = capacity_tb / exabytes_in_terabyte
+        qtr_petabytes: int = capacity_tb // terabytes_per_petabyte
+        qtr_exabytes: float = float(qtr_petabytes) / petabytes_per_exabyte
 
-        if qtr_exabytes < 0.1:
-            continue
-
-        print(f"\tQ{quarter}: {qtr_exabytes:5,.01f} exabytes (EB)")
+        if qtr_petabytes > 0:
+            print(f"\tQ{quarter}: {qtr_petabytes:6,} petabytes (PB) / {qtr_exabytes:3.01f} exabytes (EB)")
 
 
 if __name__ == "__main__":
