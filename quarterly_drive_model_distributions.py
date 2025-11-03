@@ -48,20 +48,10 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _main() -> None:
-    args: argparse.Namespace = _parse_args()
-
+def _get_source_lazyframe_with_name_mappings(args: argparse.Namespace) -> polars.LazyFrame:
     source_lazyframe: polars.LazyFrame = backblaze_drive_stats_data.source_lazyframe(args)
 
-    pipeline_stage_descriptions: tuple[str, ...] = (
-        "Create normalized drive model name mappings",
-        "Update source lazyframe with normalized drive model names and filtered columns",
-        "Create quarterly drive model distribution data",
-        "Calculate total drives deployed per quarter",
-    )
-
-    etl_pipeline.create_pipeline(pipeline_stage_descriptions)
-
+    # Get
     print( etl_pipeline.next_stage_banner() )
     smart_model_name_mappings_dataframe: polars.DataFrame = backblaze_drive_stats_data.get_smart_drive_model_mappings(
         args, source_lazyframe)
@@ -80,6 +70,11 @@ def _main() -> None:
     # print(source_lazyframe.collect_schema())
     print("\tCompleted")
 
+    return source_lazyframe
+
+
+def _get_materialized_drive_distribution_data(args: argparse.Namespace,
+                                              source_lazyframe: polars.LazyFrame) -> polars.DataFrame:
     print(etl_pipeline.next_stage_banner())
     stage_begin: float = time.perf_counter()
     print("\tMaterializing drive model distribution data from Apache Iceberg on Backblaze B2 using Polars...")
@@ -115,7 +110,10 @@ def _main() -> None:
     stage_duration: float = time.perf_counter() - stage_begin
     print(f"\tStage duration: {stage_duration:.01f} seconds")
 
+    return quarterly_drive_distribution_data
 
+
+def _compute_total_drives_per_quarter(quarterly_drive_distribution_data: polars.DataFrame) -> polars.DataFrame:
     print(etl_pipeline.next_stage_banner())
     total_drives_per_quarter: polars.DataFrame = quarterly_drive_distribution_data.group_by(
         "year", "quarter"
@@ -135,6 +133,29 @@ def _main() -> None:
     # print(total_drives_per_quarter)
 
     print("\tCompleted")
+
+    return total_drives_per_quarter
+
+
+def _main() -> None:
+    args: argparse.Namespace = _parse_args()
+
+    etl_pipeline.create_pipeline(
+        (
+            "Create normalized drive model name mappings",
+            "Update source lazyframe with normalized drive model names and filtered columns",
+            "Create quarterly drive model distribution data",
+            "Calculate total drives deployed per quarter",
+        )
+    )
+
+    source_lazyframe: polars.LazyFrame = _get_source_lazyframe_with_name_mappings(args)
+
+    quarterly_drive_distribution_data: polars.DataFrame = _get_materialized_drive_distribution_data(
+        args, source_lazyframe)
+
+    total_drives_per_quarter: polars.DataFrame = _compute_total_drives_per_quarter(
+        quarterly_drive_distribution_data)
 
 
 if __name__ == "__main__":
