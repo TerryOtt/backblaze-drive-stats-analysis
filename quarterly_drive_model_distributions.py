@@ -82,7 +82,7 @@ def _main() -> None:
 
     print(etl_pipeline.next_stage_banner())
     stage_begin: float = time.perf_counter()
-    print("\tMaterializing drive model distribution data...")
+    print("\tMaterializing drive model distribution data from Apache Iceberg on Backblaze B2 using Polars...")
     quarterly_drive_distribution_data: polars.DataFrame = source_lazyframe.group_by(
         polars.col("drive_model_name_normalized").alias("model_name"),
         polars.col("date").dt.year().alias("year"),
