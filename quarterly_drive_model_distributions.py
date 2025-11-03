@@ -108,6 +108,7 @@ def _get_materialized_drive_distribution_data(args: argparse.Namespace,
     ).collect()
 
     # print(quarterly_drive_distribution_data)
+
     print("\t\tCompleted")
 
     stage_duration: float = time.perf_counter() - stage_begin
@@ -159,11 +160,26 @@ def _main() -> None:
 
     source_lazyframe: polars.LazyFrame = _get_source_lazyframe_with_name_mappings(args)
 
-    quarterly_drive_distribution_data: polars.DataFrame = _get_materialized_drive_distribution_data(
+    quarterly_drive_distribution_dataframe: polars.DataFrame = _get_materialized_drive_distribution_data(
         args, source_lazyframe)
 
     total_drives_per_quarter: TotalDrivesPerQuarter = _compute_total_drives_per_quarter(
-        quarterly_drive_distribution_data)
+        quarterly_drive_distribution_dataframe)
+
+    prev_year_quarter: tuple[int, int] = (0, 0)
+    for curr_dataframe_row in quarterly_drive_distribution_dataframe.iter_rows():
+        year, quarter, model_name, drives_deployed = curr_dataframe_row
+
+        if year != prev_year_quarter[0]:
+            print(f"\n{year} ")
+
+        if quarter != prev_year_quarter[1]:
+            print(f"\n\tQ{quarter} ({total_drives_per_quarter[year][quarter]:9,} total drives)")
+            prev_year_quarter = (year, quarter)
+
+        print(f"\t\t\t{model_name:30}: {drives_deployed:7,}")
+
+
 
 
 if __name__ == "__main__":
