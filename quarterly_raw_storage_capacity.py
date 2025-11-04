@@ -131,12 +131,16 @@ def _main() -> None:
 
     print("\nBackblaze Raw Storage Capacity By Quarter:\n")
 
-    for curr_row in quarterly_raw_storage_capacity_dataframe.iter_rows():
-        year, quarter, raw_capacity_pb, raw_capacity_eb = curr_row
+    # Go find what's wrong with
+    #   - 2014 Q1
+    #   - 2015 Q2
+    #   - 2018 Q1
 
-        if raw_capacity_pb >= 1.0:
-            print(f"\t{year} Q{quarter}: {raw_capacity_pb:6,.0f} petabytes (PB) / "
-                  f"{raw_capacity_eb:4.01f} exabytes (EB)")
+    # for curr_row in quarterly_raw_storage_capacity_dataframe.iter_rows():
+    #     year, quarter, raw_capacity_pb, raw_capacity_eb = curr_row
+    #
+    #     print(f"\t{year} Q{quarter}: {raw_capacity_pb:6,.0f} petabytes (PB) / "
+    #           f"{raw_capacity_eb:4.01f} exabytes (EB)")
 
 
 if __name__ == "__main__":
