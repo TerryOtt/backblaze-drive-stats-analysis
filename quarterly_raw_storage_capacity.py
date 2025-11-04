@@ -44,28 +44,20 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _get_source_lazyframe_with_name_mappings(args: argparse.Namespace) -> polars.LazyFrame:
+def _get_source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
     source_lazyframe: polars.LazyFrame = backblaze_drive_stats_data.source_lazyframe(args)
 
     # Get
     print( etl_pipeline.next_stage_banner() )
-    smart_model_name_mappings_dataframe: polars.DataFrame = backblaze_drive_stats_data.get_smart_drive_model_mappings(
-        args, source_lazyframe)
 
-                                # KB     MB     GB     TB
-    bytes_per_terabyte: float = 1000 * 1000 * 1000 * 1000
+                          # KB     MB     GB     TB
+    bytes_per_tb: float = 1000 * 1000 * 1000 * 1000
 
-    # update lazyframe with name mappings
-    source_lazyframe = source_lazyframe.join(
-        smart_model_name_mappings_dataframe.lazy(),
-        left_on="model",
-        right_on="drive_model_name_smart"
-
-    # Pull the columns we care about
-    ).select(
+    # Reduce to columns we care about
+    source_lazyframe = source_lazyframe.select(
         "date",
-        polars.col("drive_model_name_normalized").alias("model_name"),
-        (polars.col("capacity_bytes") / bytes_per_terabyte).alias("capacity_tb"),
+        polars.col("model").alias("model_name"),
+        (polars.col("capacity_bytes") / bytes_per_tb).alias("capacity_tb"),
         "serial_number",
     )
     # print(source_lazyframe.collect_schema())
@@ -88,6 +80,9 @@ def _get_materialized_quarterly_storage_capacity(source_lazyframe: polars.LazyFr
 
     #print(unique_models_with_capacity_tb)
 
+    tb_per_pb: float = 1000.0
+    pb_per_eb: float = 1000.0
+
     quarterly_raw_storage_capacity_dataframe: polars.DataFrame = source_lazyframe.group_by(
         polars.col("date").dt.year().alias("year"),
         polars.col("date").dt.quarter().alias("quarter"),
@@ -95,18 +90,21 @@ def _get_materialized_quarterly_storage_capacity(source_lazyframe: polars.LazyFr
         "capacity_tb",
     ).agg(
         polars.col("serial_number").unique().count().alias("unique_sn_per_quarter_and_model")
+    ).with_columns(
+        (polars.col("capacity_tb") * polars.col("unique_sn_per_quarter_and_model") / tb_per_pb).alias(
+            "total_pb_for_model" )
+    ).group_by(
+        "year", "quarter"
+    ).agg(
+        polars.col("total_pb_for_model").sum().alias("raw_storage_pb"),
+    ).with_columns(
+        (polars.col("raw_storage_pb") / pb_per_eb).alias("raw_storage_eb"),
     ).sort(
-        [
-            "year",
-            "quarter"
-        ],
-        descending=[
-            True,
-            True,
-        ]
+    "year",
+    "quarter"
     ).collect()
 
-    print(quarterly_raw_storage_capacity_dataframe)
+    # print(quarterly_raw_storage_capacity_dataframe)
 
     print("\t\tCompleted")
 
@@ -121,32 +119,24 @@ def _main() -> None:
 
     etl_pipeline.create_pipeline(
         (
-            "Create normalized drive model name mappings",
-            "Update source lazyframe with normalized drive model names and filtered columns",
+            "Get source lazyframe",
             "Create quarterly raw storage capacity data",
         )
     )
 
-    source_lazyframe: polars.LazyFrame = _get_source_lazyframe_with_name_mappings(args)
+    source_lazyframe: polars.LazyFrame = _get_source_lazyframe(args)
 
     quarterly_raw_storage_capacity_dataframe: polars.DataFrame = _get_materialized_quarterly_storage_capacity(
         source_lazyframe)
 
-    prev_year: int = 0
+    print("\nBackblaze Raw Storage Capacity By Quarter:\n")
 
-    terabytes_per_petabyte: int = 1000
-    petabytes_per_exabyte: int = 1000
+    for curr_row in quarterly_raw_storage_capacity_dataframe.iter_rows():
+        year, quarter, raw_capacity_pb, raw_capacity_eb = curr_row
 
-    # for curr_row in quarterly_raw_storage_capacity_dataframe.iter_rows():
-    #     year, quarter, capacity_tb = curr_row
-    #
-    #     qtr_petabytes: float = capacity_tb / terabytes_per_petabyte
-    #     if qtr_petabytes > 0.0:
-    #         qtr_exabytes: float = qtr_petabytes / petabytes_per_exabyte
-    #         print(f"{year} Q{quarter}: {qtr_petabytes:7,.01f} petabytes (PB) / {qtr_exabytes:4.01f} exabytes (EB)")
-    #
-    #     if prev_year != year:
-    #         prev_year = year
+        if raw_capacity_pb >= 1.0:
+            print(f"\t{year} Q{quarter}: {raw_capacity_pb:6,.0f} petabytes (PB) / "
+                  f"{raw_capacity_eb:4.01f} exabytes (EB)")
 
 
 if __name__ == "__main__":
