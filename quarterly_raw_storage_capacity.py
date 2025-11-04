@@ -1,6 +1,7 @@
 import argparse
 import time
 import polars
+from dateutil.rrule import YEARLY
 
 import backblaze_drive_stats_data
 import etl_pipeline
@@ -51,8 +52,8 @@ def _get_source_lazyframe_with_name_mappings(args: argparse.Namespace) -> polars
     smart_model_name_mappings_dataframe: polars.DataFrame = backblaze_drive_stats_data.get_smart_drive_model_mappings(
         args, source_lazyframe)
 
-                             # KB     MB     GB     TB
-    bytes_in_terabyte: int = 1024 * 1024 * 1024 * 1024
+                                # KB     MB     GB     TB
+    bytes_per_terabyte: float = 1000 * 1000 * 1000 * 1000
 
     # update lazyframe with name mappings
     source_lazyframe = source_lazyframe.join(
@@ -63,8 +64,9 @@ def _get_source_lazyframe_with_name_mappings(args: argparse.Namespace) -> polars
     # Pull the columns we care about
     ).select(
         "date",
+        polars.col("drive_model_name_normalized").alias("model_name"),
+        (polars.col("capacity_bytes") / bytes_per_terabyte).alias("capacity_tb"),
         "serial_number",
-        (polars.col("capacity_bytes") // bytes_in_terabyte).alias("capacity_tb")
     )
     # print(source_lazyframe.collect_schema())
     print("\tCompleted")
@@ -76,19 +78,23 @@ def _get_materialized_quarterly_storage_capacity(source_lazyframe: polars.LazyFr
     print(etl_pipeline.next_stage_banner())
     stage_begin: float = time.perf_counter()
     print("\tMaterializing quarterly raw storage capacity from Apache Iceberg on Backblaze B2 using Polars...")
+
+    # # Start with creating a dataframe mapping drive model -> capacity in TB
+    # unique_models_with_capacity_tb: polars.DataFrame = source_lazyframe.unique(
+    #     "model_name"
+    # ).select(
+    #     "model_name", "capacity_tb"
+    # ).collect()
+
+    #print(unique_models_with_capacity_tb)
+
     quarterly_raw_storage_capacity_dataframe: polars.DataFrame = source_lazyframe.group_by(
         polars.col("date").dt.year().alias("year"),
         polars.col("date").dt.quarter().alias("quarter"),
+        "model_name",
+        "capacity_tb",
     ).agg(
-        polars.struct(["serial_number", "capacity_tb"]).unique().alias("drives_seen")
-    ).with_columns(
-        polars.col("drives_seen").list.eval(
-            polars.element().struct.field("capacity_tb").sum()
-        ).alias(
-            "summed_tb"
-        )
-    ).select(
-        "year", "quarter", polars.col("summed_tb").list.first().alias("qtr_capacity_tb")
+        polars.col("serial_number").unique().count().alias("unique_sn_per_quarter_and_model")
     ).sort(
         [
             "year",
@@ -100,7 +106,7 @@ def _get_materialized_quarterly_storage_capacity(source_lazyframe: polars.LazyFr
         ]
     ).collect()
 
-    # print(quarterly_raw_storage_capacity_dataframe)
+    print(quarterly_raw_storage_capacity_dataframe)
 
     print("\t\tCompleted")
 
@@ -128,21 +134,19 @@ def _main() -> None:
 
     prev_year: int = 0
 
-    terabytes_per_petabyte: int = 1024
-    petabytes_per_exabyte: int = 1024
+    terabytes_per_petabyte: int = 1000
+    petabytes_per_exabyte: int = 1000
 
-    for curr_row in quarterly_raw_storage_capacity_dataframe.iter_rows():
-        year, quarter, capacity_tb = curr_row
-
-        if prev_year != year:
-            print(f"\n{year}")
-            prev_year = year
-
-        qtr_petabytes: int = capacity_tb // terabytes_per_petabyte
-        qtr_exabytes: float = float(qtr_petabytes) / petabytes_per_exabyte
-
-        if qtr_petabytes > 0:
-            print(f"\tQ{quarter}: {qtr_petabytes:6,} petabytes (PB) / {qtr_exabytes:3.01f} exabytes (EB)")
+    # for curr_row in quarterly_raw_storage_capacity_dataframe.iter_rows():
+    #     year, quarter, capacity_tb = curr_row
+    #
+    #     qtr_petabytes: float = capacity_tb / terabytes_per_petabyte
+    #     if qtr_petabytes > 0.0:
+    #         qtr_exabytes: float = qtr_petabytes / petabytes_per_exabyte
+    #         print(f"{year} Q{quarter}: {qtr_petabytes:7,.01f} petabytes (PB) / {qtr_exabytes:4.01f} exabytes (EB)")
+    #
+    #     if prev_year != year:
+    #         prev_year = year
 
 
 if __name__ == "__main__":
