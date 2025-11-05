@@ -91,9 +91,15 @@ def _get_materialized_quarterly_storage_capacity(source_lazyframe: polars.LazyFr
         polars.col("total_pb_for_model").sum().alias("raw_storage_pb"),
     ).with_columns(
         (polars.col("raw_storage_pb") / pb_per_eb).alias("raw_storage_eb"),
+    ).select(
+        "year",
+        "quarter",
+        "raw_storage_eb",
     ).sort(
-    "year",
-    "quarter"
+        (
+            "year",
+            "quarter",
+        ),
     ).collect()
 
     # print(quarterly_raw_storage_capacity_dataframe)
@@ -123,45 +129,24 @@ def _main() -> None:
 
     print("\nBackblaze Raw Storage Capacity By Quarter:\n")
 
+    prev_eb: float = 0
+
+    output_rows: list[str] = []
+
     for curr_row in quarterly_raw_storage_capacity_dataframe.iter_rows():
-        year, quarter, raw_capacity_pb, raw_capacity_eb = curr_row
+        year, quarter, raw_capacity_eb = curr_row
 
-        print(f"\t{year} Q{quarter}: {raw_capacity_pb:6,.0f} petabytes (PB) / "
-              f"{raw_capacity_eb:4.01f} exabytes (EB)")
+        if prev_eb != 0:
+            output_rows.append(f"\t{year} Q{quarter}: {raw_capacity_eb:5.02f} exabytes (EB) "
+                  f"(delta: {raw_capacity_eb - prev_eb:5.02f} EB)")
+        else:
+            output_rows.append(f"\t{year} Q{quarter}: {raw_capacity_eb:5.02f} exabytes (EB)")
 
+        prev_eb = raw_capacity_eb
 
-    # find_problems: polars.DataFrame = source_lazyframe.select(
-    #     polars.col("date").dt.year().alias("year"),
-    #     polars.col("date").dt.quarter().alias("quarter"),
-    #     "model_name",
-    #     "capacity_tb",
-    #     "serial_number",
-    # ).filter(
-    #     (polars.col("year").eq(2017) & polars.col("quarter").eq(4)) |
-    #     ( polars.col("year").eq(2018) & polars.col("quarter").eq(1) ) |
-    #     (polars.col("year").eq(2018) & polars.col("quarter").eq(2))
-    # ).unique(
-    #     subset=["year", "quarter", "model_name", "serial_number"]
-    # ).group_by(
-    #     "year",
-    #     "quarter",
-    #     "model_name",
-    # ).agg(
-    #     polars.col("serial_number").count().alias("deploy_count"),
-    #     polars.col("capacity_tb").median().alias("median_capacity_tb"),
-    # ).sort(
-    #     [ "year", "quarter", "deploy_count", "model_name" ],
-    #     descending=[False, False, True, False]
-    # ).collect()
-    #
-    # prev_year_quarter: tuple[int, int] = (0, 0)
-    #
-    # for year, quarter, model, count, median_tb in find_problems.iter_rows():
-    #     if (year, quarter) != prev_year_quarter:
-    #         print(f"\n{year} Q{quarter}:")
-    #         prev_year_quarter = (year, quarter)
-    #
-    #     print(f"\t{model:30} ({median_tb:6.03f} TB): {count:6,} unique serial numbers")
+    # Show from newest to oldest
+    for curr_output_row in reversed(output_rows):
+        print(curr_output_row)
 
 
 if __name__ == "__main__":
