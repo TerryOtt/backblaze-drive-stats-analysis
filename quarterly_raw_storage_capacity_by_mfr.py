@@ -44,20 +44,72 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _get_source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
-    source_lazyframe: polars.LazyFrame = backblaze_drive_stats_data.source_lazyframe(args)
 
     print( etl_pipeline.next_stage_banner() )
+
 
                           # KB     MB     GB     TB
     bytes_per_tb: float = 1000 * 1000 * 1000 * 1000
 
+    tb_per_pb: float = 1000.0
+
+    source_lazyframe: polars.LazyFrame = backblaze_drive_stats_data.source_lazyframe(args)
+
+    source_lazyframe = source_lazyframe.join(
+        # Join with normalized name mapping dataframe to reduce to drives of interest
+        backblaze_drive_stats_data.get_smart_drive_model_mappings(args, source_lazyframe).lazy(),
+        left_on="model",
+        right_on="drive_model_name_smart",
+
     # Reduce to columns we care about
-    source_lazyframe = source_lazyframe.select(
+    ).select(
         polars.col("date").dt.year().alias("year"),
         polars.col("date").dt.quarter().alias("quarter"),
-        (polars.col("capacity_bytes") / bytes_per_tb).alias("capacity_tb"),
-        polars.col("model").alias("model_name"),
+        polars.col("drive_model_name_normalized").alias("model_name"),
         "serial_number",
+        (polars.col("capacity_bytes") / bytes_per_tb).alias("capacity_tb"),
+    )
+
+    # Add a column for "correct" capacity per model (i.e., median of TB capacities reported for that model)
+    source_lazyframe = source_lazyframe.join(
+        source_lazyframe.group_by(
+            "model_name"
+        ).agg(
+            polars.col("capacity_tb").median().alias("normalized_capacity_tb"),
+        ),
+
+        on="model_name",
+
+    # Reduce columns back down after getting normalized drive capacity per model
+    ).select(
+        "year",
+        "quarter",
+        "model_name",
+        polars.col("normalized_capacity_tb").alias("capacity_tb"),
+        "serial_number"
+
+    # Give one row per SN per quarter
+    ).unique(
+
+    # Aggregate number of drives per quarter per model
+    ).group_by(
+        "year",
+        "quarter",
+        "model_name",
+        "capacity_tb",
+    ).agg(
+        polars.col("serial_number").count().alias("drives_deployed"),
+
+    # Do the math to compute PB per quarter per model
+    ).select(
+        "year",
+        "quarter",
+        "model_name",
+        (polars.col("capacity_tb") * polars.col("drives_deployed") / tb_per_pb).alias("model_cumulative_raw_pb"),
+    ).sort(
+        "year",
+        "quarter",
+        "model_name",
     )
 
     # print(source_lazyframe.collect_schema())
@@ -73,32 +125,24 @@ def _get_materialized_quarterly_storage_capacity(source_lazyframe: polars.LazyFr
     print("\tMaterializing quarterly raw storage capacity from Apache Iceberg on Backblaze B2 using Polars...")
 
     tb_per_pb: float = 1000.0
-    pb_per_eb: float = 1000.0
+    # pb_per_eb: float = 1000.0
 
-    quarterly_raw_storage_capacity_dataframe: polars.DataFrame = source_lazyframe.group_by(
+    quarterly_raw_storage_capacity_dataframe: polars.DataFrame = source_lazyframe.select(
         "year",
         "quarter",
-        "model_name",
-    ).agg(
-        polars.col("serial_number").unique().count().alias("unique_sn_per_quarter_and_model"),
-        polars.col("capacity_tb").median().alias("median_capacity_tb"),
-    ).with_columns(
-        (polars.col("median_capacity_tb") * polars.col("unique_sn_per_quarter_and_model") / tb_per_pb).alias(
-            "total_pb_for_model" )
+        polars.col("model_name").str.split(" ").list.first().alias("drive_mfr"),
+        "model_cumulative_raw_pb",
     ).group_by(
-        "year", "quarter"
-    ).agg(
-        polars.col("total_pb_for_model").sum().alias("raw_storage_pb"),
-    ).with_columns(
-        (polars.col("raw_storage_pb") / pb_per_eb).alias("raw_storage_eb"),
-    ).select(
         "year",
         "quarter",
-        "raw_storage_eb",
+        "drive_mfr",
+    ).agg(
+        polars.col("model_cumulative_raw_pb").sum().alias("raw_capacity_pb")
     ).sort(
         (
             "year",
             "quarter",
+            "drive_mfr",
         ),
     ).collect()
 
@@ -127,22 +171,37 @@ def _main() -> None:
     quarterly_raw_storage_capacity_dataframe: polars.DataFrame = _get_materialized_quarterly_storage_capacity(
         source_lazyframe)
 
-    print("\nBackblaze Raw Storage Capacity By Quarter:\n")
-
-    prev_eb: float = 0
+    print("\nBackblaze Raw Storage Capacity By Quarter By Drive Manufacturer (PB):\n")
 
     output_rows: list[str] = []
 
+    prev_year_qtr: tuple[int, int] = (0, 0)
+    prev_year_data: list[str] = []
+    prev_year_pb: float = 0
+
     for curr_row in quarterly_raw_storage_capacity_dataframe.iter_rows():
-        year, quarter, raw_capacity_eb = curr_row
+        year, quarter, drive_mfr, raw_capacity_pb = curr_row
 
-        if prev_eb != 0:
-            output_rows.append(f"\t{year} Q{quarter}: {raw_capacity_eb:5.02f} exabytes (EB) "
-                  f"(delta: {raw_capacity_eb - prev_eb:5.02f} EB)")
-        else:
-            output_rows.append(f"\t{year} Q{quarter}: {raw_capacity_eb:5.02f} exabytes (EB)")
+        if (year, quarter) != prev_year_qtr:
+            # Do we have data to output?
+            if prev_year_data:
+                output_rows.append(f"\t{prev_year_qtr[0]} Q{prev_year_qtr[1]} (Total = {prev_year_pb:8,.01f}):\t" +
+                                    "    ".join(prev_year_data) )
+                prev_year_data.clear()
+                prev_year_pb = 0
 
-        prev_eb = raw_capacity_eb
+            prev_year_qtr = (year, quarter)
+
+            # If we've rolled into a new year, add a blank line
+            if quarter == 1:
+                output_rows.append("")
+
+        prev_year_data.append(f"{drive_mfr} = {raw_capacity_pb:8,.01f}")
+        prev_year_pb += raw_capacity_pb
+
+    if prev_year_data:
+        output_rows.append(f"\t{prev_year_qtr[0]} Q{prev_year_qtr[1]} (Total = {prev_year_pb:8,.01f}):\t" +
+                            "    ".join(prev_year_data) )
 
     # Show from newest to oldest
     for curr_output_row in reversed(output_rows):
