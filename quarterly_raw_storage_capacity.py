@@ -1,6 +1,4 @@
 import argparse
-import re
-import sys
 import time
 import polars
 
@@ -45,103 +43,6 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-# def _correct_source_lazyframe_drive_model_capacity(source_lazyframe: polars.LazyFrame) -> polars.LazyFrame:
-#
-#     drive_model_tb_corrections: dict[str, float] = {
-#
-#         r'^MTFDDAV240TCB$'                      :  0.240,
-#
-#         r'^CT250MX500SSD1$'                     :  0.250,
-#         r'\b250\s?GB$'                          :  0.250,
-#         r'^Seagate BarraCuda 120 SSD ZA250'     :  0.250,
-#         r'^Seagate IronWolf ZA250'              :  0.250,
-#         r'^WDC WDS250G'                         :  0.250,
-#         r'^Seagate BarraCuda SSD ZA250'         :  0.250,
-#
-#         r'^DELLBOSS VD$'                        :  0.480,
-#         r'^MTFDDAV480TCB$'                      :  0.480,
-#
-#         r'^Seagate BarraCuda 120 SSD ZA500'     :  0.500,
-#         r'^Seagate FireCuda 120 SSD ZA500'      :  0.500,
-#
-#         r'^WDC WD10E'                           :  1.000,
-#
-#         r'\bH[DM]S5C4040'                       :  4.001,
-#         r'\b[HW]U[HS]726040'                    :  4.001,
-#         r'^ST4000[A-Z]{2}'                      :  4.001,
-#         r'^TOSHIBA MD04ABA400V$'                :  4.001,
-#
-#         r'^ST6000[A-Z]{2}'                      :  6.001,
-#         r'^WDC WD60E'                           :  6.001,
-#
-#         r'\b[HW]U[HS]728080'                    :  8.002,
-#         r'\b[HW]U[HS]728T8T'                    :  8.002,
-#         r'^ST8000[A-Z]{2}'                      :  8.002,
-#         r'^TOSHIBA HDWF180$'                    :  8.002,
-#
-#         r'\b[HW]U[HS]721010'                    : 10.001,
-#         r'^ST10000[A-Z]{2}'                     : 10.001,
-#
-#         r'\b[HW]U[HS]721212'                    : 12.000,
-#         r'^ST12000[A-Z]{2}'                     : 12.000,
-#
-#         r'^ST14000[A-Z]{2}'                     : 14.001,
-#         r'^TOSHIBA MG\d{2}ACA14T'               : 14.001,
-#         r'\b[HW]U[HS]72\d{2}14'                 : 14.001,
-#
-#         r'^ST16000[A-Z]{2}'                     : 16.001,
-#         r'^TOSHIBA MG\d{2}ACA16T'               : 16.001,
-#         r'\b[HW]U[HS]72\d{2}16'                 : 16.001,
-#
-#         r'^ST18000[A-Z]{2}'                     : 18.000,
-#
-#         r'^TOSHIBA MG\d{2}ACA20T'               : 20.001,
-#
-#         r'\b[HW]U[HS]72\d{2}2'                  : 22.001,
-#
-#         r'^ST24000[A-Z]{2}'                     : 24.000,
-#     }
-#
-#     # Get all the models with sizes that aren't real
-#     bad_boy_models: list[str] = source_lazyframe.filter(
-#         # LT 1 GB                                             GT 40 TB
-#         polars.col("capacity_bytes").lt(1000 * 1000 * 1000) | polars.col("capacity_tb").gt(40.0)
-#     ).select(
-#         "model_name",
-#     ).unique().collect().get_column("model_name").to_list()
-#
-#     # Create size correction lists
-#     update_model_name: list[str] = []
-#     update_capacity_tb: list[float] = []
-#     for curr_bad_boy in bad_boy_models:
-#         found_capacity: bool = False
-#         for match_regex, match_capacity_tb in drive_model_tb_corrections.items():
-#             if re.search(match_regex, curr_bad_boy):
-#                 update_model_name.append(curr_bad_boy)
-#                 update_capacity_tb.append(match_capacity_tb)
-#                 found_capacity = True
-#                 break
-#
-#         # If we didn't find a mapping, blow up the world
-#         if not found_capacity:
-#             raise ValueError(f"Could not find correct capacity for model {curr_bad_boy}")
-#
-#     corrected_data_lazyframe: polars.LazyFrame = polars.LazyFrame(
-#         {
-#             "model_name"    : update_model_name,
-#             "capacity_tb"   : update_capacity_tb,
-#         }
-#     )
-#
-#     updated_lazyframe: polars.LazyFrame = source_lazyframe.update(
-#         corrected_data_lazyframe,
-#         on="model_name",
-#         how="full",
-#     )
-#
-#     return updated_lazyframe
-
-
 def _get_source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
     source_lazyframe: polars.LazyFrame = backblaze_drive_stats_data.source_lazyframe(args)
 
@@ -152,20 +53,14 @@ def _get_source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
 
     # Reduce to columns we care about
     source_lazyframe = source_lazyframe.select(
-        "date",
-        polars.col("model").alias("model_name"),
-        "capacity_bytes",
+        polars.col("date").dt.year().alias("year"),
+        polars.col("date").dt.quarter().alias("quarter"),
         (polars.col("capacity_bytes") / bytes_per_tb).alias("capacity_tb"),
+        polars.col("model").alias("model_name"),
         "serial_number",
-
-    # Remove rows with bad drive capacity data reported by SMART
-    ).filter(
-        polars.col("capacity_tb").is_between(0.001, 25.000)
     )
-    # print(source_lazyframe.collect_schema())
 
-    # Add logic so data streamed through the dataframe has any bunk byte capacities fixed
-    # source_lazyframe = _correct_source_lazyframe_drive_model_capacity(source_lazyframe)
+    # print(source_lazyframe.collect_schema())
 
     print("\tCompleted")
 
@@ -181,14 +76,14 @@ def _get_materialized_quarterly_storage_capacity(source_lazyframe: polars.LazyFr
     pb_per_eb: float = 1000.0
 
     quarterly_raw_storage_capacity_dataframe: polars.DataFrame = source_lazyframe.group_by(
-        polars.col("date").dt.year().alias("year"),
-        polars.col("date").dt.quarter().alias("quarter"),
+        "year",
+        "quarter",
         "model_name",
-        "capacity_tb",
     ).agg(
-        polars.col("serial_number").unique().count().alias("unique_sn_per_quarter_and_model")
+        polars.col("serial_number").unique().count().alias("unique_sn_per_quarter_and_model"),
+        polars.col("capacity_tb").median().alias("median_capacity_tb"),
     ).with_columns(
-        (polars.col("capacity_tb") * polars.col("unique_sn_per_quarter_and_model") / tb_per_pb).alias(
+        (polars.col("median_capacity_tb") * polars.col("unique_sn_per_quarter_and_model") / tb_per_pb).alias(
             "total_pb_for_model" )
     ).group_by(
         "year", "quarter"
@@ -221,8 +116,6 @@ def _main() -> None:
         )
     )
 
-    # Note: any models read with incorrect capacities will be corrected by the logic in this source
-    #       lazyframe
     source_lazyframe: polars.LazyFrame = _get_source_lazyframe(args)
 
     quarterly_raw_storage_capacity_dataframe: polars.DataFrame = _get_materialized_quarterly_storage_capacity(
@@ -236,7 +129,39 @@ def _main() -> None:
         print(f"\t{year} Q{quarter}: {raw_capacity_pb:6,.0f} petabytes (PB) / "
               f"{raw_capacity_eb:4.01f} exabytes (EB)")
 
-    raise NotImplementedError("TODO: need to investigate 2018 Q1 with twice the storage it should have")
+
+    # find_problems: polars.DataFrame = source_lazyframe.select(
+    #     polars.col("date").dt.year().alias("year"),
+    #     polars.col("date").dt.quarter().alias("quarter"),
+    #     "model_name",
+    #     "capacity_tb",
+    #     "serial_number",
+    # ).filter(
+    #     (polars.col("year").eq(2017) & polars.col("quarter").eq(4)) |
+    #     ( polars.col("year").eq(2018) & polars.col("quarter").eq(1) ) |
+    #     (polars.col("year").eq(2018) & polars.col("quarter").eq(2))
+    # ).unique(
+    #     subset=["year", "quarter", "model_name", "serial_number"]
+    # ).group_by(
+    #     "year",
+    #     "quarter",
+    #     "model_name",
+    # ).agg(
+    #     polars.col("serial_number").count().alias("deploy_count"),
+    #     polars.col("capacity_tb").median().alias("median_capacity_tb"),
+    # ).sort(
+    #     [ "year", "quarter", "deploy_count", "model_name" ],
+    #     descending=[False, False, True, False]
+    # ).collect()
+    #
+    # prev_year_quarter: tuple[int, int] = (0, 0)
+    #
+    # for year, quarter, model, count, median_tb in find_problems.iter_rows():
+    #     if (year, quarter) != prev_year_quarter:
+    #         print(f"\n{year} Q{quarter}:")
+    #         prev_year_quarter = (year, quarter)
+    #
+    #     print(f"\t{model:30} ({median_tb:6.03f} TB): {count:6,} unique serial numbers")
 
 
 if __name__ == "__main__":
