@@ -70,13 +70,26 @@ def _get_source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
         (polars.col("capacity_bytes") / bytes_per_tb).alias("capacity_tb"),
     )
 
-    # Add a column for "correct" capacity per model (i.e., median of TB capacities reported for that model)
+    # Add a column for "correct" capacity per model (i.e., mode of TB capacities reported for that model)
+    #   Don't remember the mode?
+    #   I didn't remember it either when scyost mentioned it.
+    #   It's the _most common_/_most frequently seen_ value in the list
+
+    drive_model_capacity_by_model: polars.LazyFrame = source_lazyframe.group_by(
+        "model_name",
+    ).agg(
+        polars.col("capacity_tb").implode().alias("capacity_tb_list"),
+    ).with_columns(
+        polars.col("capacity_tb_list").list.eval(polars.element().mode()).list.first().alias("capacity_tb_mode")
+    ).select(
+        "model_name",
+        polars.col("capacity_tb_mode").alias("capacity_tb_normalized")
+    )
+
+    # print(drive_model_capacity_by_model.collect())
+
     source_lazyframe = source_lazyframe.join(
-        source_lazyframe.group_by(
-            "model_name"
-        ).agg(
-            polars.col("capacity_tb").median().alias("normalized_capacity_tb"),
-        ),
+        drive_model_capacity_by_model,
 
         on="model_name",
 
@@ -85,7 +98,7 @@ def _get_source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
         "year",
         "quarter",
         "model_name",
-        polars.col("normalized_capacity_tb").alias("capacity_tb"),
+        polars.col("capacity_tb_normalized").alias("capacity_tb"),
         "serial_number"
 
     # Give one row per SN per quarter
