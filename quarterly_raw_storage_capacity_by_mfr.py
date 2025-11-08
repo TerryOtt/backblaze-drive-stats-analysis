@@ -74,23 +74,15 @@ def _get_source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
     #   Don't remember the mode?
     #   I didn't remember it either when scyost mentioned it.
     #   It's the _most common_/_most frequently seen_ value in the list
-
     drive_model_capacity_by_model: polars.LazyFrame = source_lazyframe.group_by(
         "model_name",
     ).agg(
-        polars.col("capacity_tb").implode().alias("capacity_tb_list"),
-    ).with_columns(
-        polars.col("capacity_tb_list").list.eval(polars.element().mode()).list.first().alias("capacity_tb_mode")
-    ).select(
-        "model_name",
-        polars.col("capacity_tb_mode").alias("capacity_tb_normalized")
+        # Have to chain first() because mode returns a list, as there can be a tie of most frequent
+        polars.col("capacity_tb").mode().first().alias("capacity_tb_normalized"),
     )
-
-    # print(drive_model_capacity_by_model.collect())
 
     source_lazyframe = source_lazyframe.join(
         drive_model_capacity_by_model,
-
         on="model_name",
 
     # Reduce columns back down after getting normalized drive capacity per model
