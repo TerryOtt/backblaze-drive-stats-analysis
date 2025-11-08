@@ -81,7 +81,10 @@ def _get_materialized_quarterly_storage_capacity(source_lazyframe: polars.LazyFr
         "model_name",
     ).agg(
         polars.col("serial_number").unique().count().alias("unique_sn_per_quarter_and_model"),
-        polars.col("capacity_tb").median().alias("median_capacity_tb"),
+
+        # Mode returns a list of values as there can be a tie of most frequent.
+        # There won't be in our case
+        polars.col("capacity_tb").mode().first().alias("median_capacity_tb"),
     ).with_columns(
         (polars.col("median_capacity_tb") * polars.col("unique_sn_per_quarter_and_model") / tb_per_pb).alias(
             "total_pb_for_model" )
@@ -133,8 +136,13 @@ def _main() -> None:
 
     output_rows: list[str] = []
 
+    prev_year: int = 2013
     for curr_row in quarterly_raw_storage_capacity_dataframe.iter_rows():
         year, quarter, raw_capacity_eb = curr_row
+
+        if year != prev_year:
+            output_rows.append("")
+            prev_year = year
 
         if prev_eb != 0:
             output_rows.append(f"\t{year} Q{quarter}: {raw_capacity_eb:5.02f} exabytes (EB) "
