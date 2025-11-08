@@ -181,7 +181,7 @@ def _main() -> None:
     output_rows: list[str] = []
 
     prev_year_qtr: tuple[int, int] = (0, 0)
-    prev_year_data: list[str] = []
+    prev_year_data: list[tuple[str, float]] = []
     prev_year_pb: float = 0
 
     for curr_row in quarterly_raw_storage_capacity_dataframe.iter_rows():
@@ -190,8 +190,12 @@ def _main() -> None:
         if (year, quarter) != prev_year_qtr:
             # Do we have data to output?
             if prev_year_data:
+                detailed_data: list[str] = []
+                for curr_mfr_qtr in prev_year_data:
+                    detailed_data.append(f"{curr_mfr_qtr[0]} = {curr_mfr_qtr[1]:8,.01f} "
+                                         f"({curr_mfr_qtr[1] / prev_year_pb * 100.0:3.0f}%)")
                 output_rows.append(f"\t{prev_year_qtr[0]} Q{prev_year_qtr[1]} (Total = {prev_year_pb:8,.01f}):\t" +
-                                    "    ".join(prev_year_data) )
+                                    "    ".join(detailed_data) )
                 prev_year_data.clear()
                 prev_year_pb = 0
 
@@ -201,12 +205,16 @@ def _main() -> None:
             if quarter == 1:
                 output_rows.append("")
 
-        prev_year_data.append(f"{drive_mfr} = {raw_capacity_pb:8,.01f}")
+        prev_year_data.append( (drive_mfr, raw_capacity_pb) )
         prev_year_pb += raw_capacity_pb
 
     if prev_year_data:
+        detailed_data: list[str] = []
+        for curr_mfr_qtr in prev_year_data:
+            detailed_data.append(f"{curr_mfr_qtr[0]} = {curr_mfr_qtr[1]:8,.01f} "
+                                 f"({curr_mfr_qtr[1] / prev_year_pb * 100.0:3.0f}%)")
         output_rows.append(f"\t{prev_year_qtr[0]} Q{prev_year_qtr[1]} (Total = {prev_year_pb:8,.01f}):\t" +
-                            "    ".join(prev_year_data) )
+                                    "    ".join(detailed_data) )
 
     # Show from newest to oldest
     for curr_output_row in reversed(output_rows):
