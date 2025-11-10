@@ -1,4 +1,7 @@
 import argparse
+import polars
+
+import backblaze_drive_stats_data
 
 
 def _parse_args() -> argparse.Namespace:
@@ -25,8 +28,6 @@ def _parse_args() -> argparse.Namespace:
                         default=default_table_path,
                         help=f"B2 Bucket Table Path (default: \"{default_table_path}\")")
 
-    parser.add_argument('drive_patterns_json', help='Path to JSON with drive regexes')
-
     #parser.add_argument("input_parquet_file", help="Path to parquet file we read from")
 
     parser.add_argument("b2_access_key",
@@ -39,8 +40,35 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _find_and_add_drive_models(args: argparse.Namespace, source_lazyframe: polars.LazyFrame) -> None:
+    drive_model_dataframe: polars.DataFrame = source_lazyframe.select(
+        "model",
+        "capacity_bytes"
+    ).group_by(
+        "model"
+    ).agg(
+        polars.col("capacity_bytes").mode().first().alias("capacity_bytes_mode"),
+    ).select(
+        polars.col("model").alias("drive_model_smart"),
+        ( polars.col("capacity_bytes_mode") / 1000 / 1000 / 1000 / 1000 ).alias("capacity_tb"),
+    ).sort(
+        "drive_model_smart"
+    ).collect()
+
+    print( drive_model_dataframe )
+
+
 def _main() -> None:
     args: argparse.Namespace = _parse_args()
+    source_lazyframe: polars.LazyFrame = backblaze_drive_stats_data.source_lazyframe(args)
+
+    # Get and add all models
+    _find_and_add_drive_models(args, source_lazyframe)
+
+    # Get and add all drives
+
+    # Get daily info and add it
+
 
 
 if __name__ == "__main__":
