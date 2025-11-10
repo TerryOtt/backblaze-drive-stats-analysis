@@ -44,9 +44,9 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _get_source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
-    source_lazyframe: polars.LazyFrame = backblaze_drive_stats_data.source_lazyframe(args)
-
     print( etl_pipeline.next_stage_banner() )
+    source_lazyframe: polars.LazyFrame = backblaze_drive_stats_data.source_lazyframe(args)
+    # print(source_lazyframe.collect_schema())
 
                           # KB     MB     GB     TB
     bytes_per_tb: float = 1000 * 1000 * 1000 * 1000
@@ -55,9 +55,13 @@ def _get_source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
     source_lazyframe = source_lazyframe.select(
         polars.col("date").dt.year().alias("year"),
         polars.col("date").dt.quarter().alias("quarter"),
-        (polars.col("capacity_bytes") / bytes_per_tb).alias("capacity_tb"),
+        polars.col("datacenter").str.to_uppercase(),
         polars.col("model").alias("model_name"),
+        (polars.col("capacity_bytes") / bytes_per_tb).alias("capacity_tb"),
         "serial_number",
+    ).filter(
+        polars.col("datacenter").is_not_null(),
+        polars.col("datacenter").str.len_chars().ge(4)
     )
 
     # print(source_lazyframe.collect_schema())
@@ -78,30 +82,30 @@ def _get_materialized_quarterly_storage_capacity(source_lazyframe: polars.LazyFr
     quarterly_raw_storage_capacity_dataframe: polars.DataFrame = source_lazyframe.group_by(
         "year",
         "quarter",
+        "datacenter",
         "model_name",
     ).agg(
         polars.col("serial_number").unique().count().alias("unique_sn_per_quarter_and_model"),
-
-        # Mode returns a list of values as there can be a tie of most frequent.
-        # There won't be in our case
-        polars.col("capacity_tb").mode().first().alias("median_capacity_tb"),
+        polars.col("capacity_tb").median().alias("median_capacity_tb"),
     ).with_columns(
         (polars.col("median_capacity_tb") * polars.col("unique_sn_per_quarter_and_model") / tb_per_pb).alias(
             "total_pb_for_model" )
     ).group_by(
-        "year", "quarter"
+        "year", "quarter", "datacenter",
     ).agg(
-        polars.col("total_pb_for_model").sum().alias("raw_storage_pb"),
+        polars.col("total_pb_for_model").sum().alias("raw_storage_pb")
     ).with_columns(
         (polars.col("raw_storage_pb") / pb_per_eb).alias("raw_storage_eb"),
     ).select(
         "year",
         "quarter",
+        "datacenter",
         "raw_storage_eb",
     ).sort(
         (
             "year",
             "quarter",
+            "datacenter",
         ),
     ).collect()
 
@@ -120,8 +124,8 @@ def _main() -> None:
 
     etl_pipeline.create_pipeline(
         (
-            "Get source lazyframe (note: includes to fix rows with invalid capacities from SMART",
-            "Create quarterly raw storage capacity data",
+            "Get source lazyframe (note: fixes rows from source with invalid capacities from SMART)",
+            "Create quarterly raw storage capacity data by datacenter",
         )
     )
 
@@ -130,31 +134,33 @@ def _main() -> None:
     quarterly_raw_storage_capacity_dataframe: polars.DataFrame = _get_materialized_quarterly_storage_capacity(
         source_lazyframe)
 
-    print("\nBackblaze Raw Storage Capacity By Quarter:\n")
-
-    prev_eb: float = 0
+    print("\nBackblaze Raw Storage Capacity By Quarter & Datacenter:\n")
 
     output_rows: list[str] = []
 
-    prev_year: int = 2013
-    for curr_row in quarterly_raw_storage_capacity_dataframe.iter_rows():
-        year, quarter, raw_capacity_eb = curr_row
+    prev_year_qtr: tuple[int, int] = (2023, 3)
+    year_qtr_datacenters: list[str] = []
+    prev_qtr_cumulative_eb: float = 0
+    for year, quarter, datacenter_iata_code, datacenter_eb in quarterly_raw_storage_capacity_dataframe.iter_rows():
+        # print(f"{year} Q{quarter}")
+        if (year, quarter) != prev_year_qtr:
+            prev_year, prev_quarter = prev_year_qtr
+            output_rows.append(f"\t{prev_year} Q{prev_quarter} ({prev_qtr_cumulative_eb:5.02f} EB): "
+                  f"{", ".join(year_qtr_datacenters)}")
+            year_qtr_datacenters.clear()
+            prev_year_qtr = (year, quarter)
+            prev_qtr_cumulative_eb = 0
 
-        if year != prev_year:
-            output_rows.append("")
-            prev_year = year
+        year_qtr_datacenters.append(f"{datacenter_iata_code} = {datacenter_eb:4.02f} EB")
+        prev_qtr_cumulative_eb += datacenter_eb
 
-        if prev_eb != 0:
-            output_rows.append(f"\t{year} Q{quarter}: {raw_capacity_eb:5.02f} exabytes (EB) "
-                  f"(delta: {raw_capacity_eb - prev_eb:5.02f} EB)")
-        else:
-            output_rows.append(f"\t{year} Q{quarter}: {raw_capacity_eb:5.02f} exabytes (EB)")
+    # Print out final year and quarter
+    if year_qtr_datacenters:
+        output_rows.append(f"\t{prev_year_qtr[0]} Q{prev_year_qtr[1]} ({prev_qtr_cumulative_eb:5.02f} EB): "
+              f"{", ".join(year_qtr_datacenters)}")
 
-        prev_eb = raw_capacity_eb
-
-    # Show from newest to oldest
-    for curr_output_row in reversed(output_rows):
-        print(curr_output_row)
+    for curr_year_qtr in reversed(output_rows):
+        print(curr_year_qtr)
 
 
 if __name__ == "__main__":
