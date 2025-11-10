@@ -41,10 +41,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _find_and_add_drive_models(args: argparse.Namespace, source_lazyframe: polars.LazyFrame) -> None:
-    drive_model_dataframe: polars.DataFrame = source_lazyframe.select(
-        "model",
-        "capacity_bytes"
-    ).group_by(
+    drive_model_dataframe: polars.DataFrame = source_lazyframe.group_by(
         "model"
     ).agg(
         polars.col("capacity_bytes").mode().first().alias("capacity_bytes_mode"),
