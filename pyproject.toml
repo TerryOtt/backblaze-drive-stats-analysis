@@ -1,0 +1,12 @@
+[project]
+name = "backblaze-drive-stats-analysis"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "boto3>=1.42.68",
+    "polars>=1.39.0",
+    "s3fs>=0.4.2",
+    "xlsxwriter>=3.2.9",
+]

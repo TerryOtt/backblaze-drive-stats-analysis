@@ -25,18 +25,16 @@ repositories, so it's left as an exercise for the reader.
 
 ### Installation Steps
 
-```
-$ sudo apt-get update
-$ sudo apt-get -y install python3-venv
-$ python3 -m venv .venv
-$ source .venv/bin/activate
-$ pip3 install -r requirements.txt
+```bash
+$ curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh
+$ uv python install 3.14
+$ uv venv -p 3.14
 ```
 
 ### Running The Script
 
 ```
-$ python3 quarterly_afr_xlsx_from_iceberg.py 	        \
+$ uv run quarterly_afr_xlsx_from_iceberg.py 	        \
     drives_of_interest_regexes.json     		        \
     [s3_access_key]                     		        \
     [s3_secret_access_key]              		        \
