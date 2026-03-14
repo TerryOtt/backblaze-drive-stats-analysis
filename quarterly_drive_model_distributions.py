@@ -47,7 +47,6 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("b2_secret_access_key",
                         help="Backblaze B2 Secret Access Key")
 
-    parser.add_argument("output_xlsx", help="Path to output visualization XLSX file (s3:// supported)")
     return parser.parse_args()
 
 
