@@ -10,7 +10,9 @@ def current_metadata_file_s3_uri( b2_access_key: str,
     s3_handle: s3fs.S3FileSystem = s3fs.S3FileSystem(
         key=b2_access_key,
         secret=b2_secret_access_key,
-        endpoint_url=s3_endpoint
+        client_kwargs={
+            'endpoint_url': s3_endpoint,
+        },
     )
 
     bucket_path: str = f"{s3_bucket_name}/{table_path}/metadata"

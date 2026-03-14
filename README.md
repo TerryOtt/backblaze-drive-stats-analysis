@@ -28,7 +28,7 @@ repositories, so it's left as an exercise for the reader.
 ```bash
 $ curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh
 $ uv python install 3.14
-$ uv venv -p 3.14
+$ uv venv --python 3.14
 ```
 
 ### Running The Script
