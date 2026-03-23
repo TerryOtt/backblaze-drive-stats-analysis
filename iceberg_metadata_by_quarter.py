@@ -3,6 +3,7 @@ import datetime
 import json
 import pathlib
 import time
+import typing
 
 import s3fs
 
@@ -12,9 +13,9 @@ import iceberg_table
 def _bin_metadata_by_qtr(b2_access_key: str,
                          b2_secret_access_key: str,
                          s3_endpoint: str,
-                         metadata_files: list[str]) -> dict[str, set[datetime.date]]:
+                         metadata_files: list[str],
+                         program_state: dict[str, typing.Any]) -> dict[str, set[datetime.date]]:
 
-    binned_metadata: dict[str, set[datetime.date]] = {}
 
     s3_handle: s3fs.S3FileSystem = s3fs.S3FileSystem(
         key=b2_access_key,
@@ -42,9 +43,30 @@ def _bin_metadata_by_qtr(b2_access_key: str,
         12: 4,
     }
 
+    # Initialize binned metadata from program state
+    if program_state is not None and 'binned_metadata' in program_state:
+        binned_metadata: dict[str, set[datetime.date]] = program_state['binned_metadata']
+
+        # Remove any metadata files that are OBE due to program state
+        trimmed_metadata: list[str] = []
+        for metadata_file in reversed(metadata_files):
+            base_filename: str = pathlib.Path(metadata_file).name
+            # If we've hit versions we know about, bail
+            if base_filename[:5] <= program_state["latest_metadata_version"]:
+                break
+
+            trimmed_metadata.append(metadata_file)
+
+        metadata_files = reversed(trimmed_metadata)
+
+    else:
+        binned_metadata: dict[str, set[datetime.date]] = {}
+
     # Crack each JSON metadata open and read its contents
     print("Pulling update date for all metadata files that exist:")
     for metadata_file in metadata_files:
+        base_filename: str = pathlib.Path(metadata_file).name
+
         # Read from S3
         with s3_handle.open(f"s3://{metadata_file}") as s3_file:
             metadata_content = s3_file.read()
@@ -53,7 +75,6 @@ def _bin_metadata_by_qtr(b2_access_key: str,
         metadata_file_date: datetime.date = datetime.datetime.fromtimestamp(
             parsed_metadata["last-updated-ms"] / 1000.0 ).date()
 
-        base_filename: str = pathlib.Path(metadata_file).name
 
         print(f"\t{base_filename}: {metadata_file_date.isoformat()}")
 
@@ -66,6 +87,14 @@ def _bin_metadata_by_qtr(b2_access_key: str,
             binned_metadata[qtr_str] = set()
 
         binned_metadata[qtr_str].add( metadata_file_date )
+
+        if program_state is not None:
+            if 'latest_metadata_version' not in program_state or \
+                    base_filename[:5] > program_state['latest_metadata_version']:
+                program_state['latest_metadata_version'] = base_filename[:5]
+
+    if program_state is not None:
+        program_state['binned_metadata'] = binned_metadata
 
     return binned_metadata
 
@@ -102,11 +131,29 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("b2_secret_access_key",
                         help="Backblaze B2 Secret Access Key")
 
+    parser.add_argument("state_file", nargs='?', help="Path to state file")
+
     return parser.parse_args()
 
 
 def _main() -> None:
     args: argparse.Namespace = _parse_args()
+
+    program_state: dict[str, typing.Any] | None = None
+
+    if args.state_file:
+        if pathlib.Path(args.state_file).exists():
+            with open(args.state_file) as f:
+                program_state = json.load(f)
+                for curr_qtr_str in program_state['binned_metadata']:
+                    # Convert date strings to datetime objects
+                    for date_index, _  in enumerate(program_state['binned_metadata'][curr_qtr_str]):
+                        program_state['binned_metadata'][curr_qtr_str][date_index] = \
+                            datetime.date.fromisoformat(program_state['binned_metadata'][curr_qtr_str][date_index])
+                print(f"Read state for metadata versions up to {program_state['latest_metadata_version']}")
+
+        else:
+            program_state = {}
 
     start_time: float = time.perf_counter()
     metadata_files: list[str] = iceberg_table.metadata_files(
@@ -125,6 +172,7 @@ def _main() -> None:
         args.b2_secret_access_key,
         args.s3_endpoint,
         metadata_files,
+        program_state,
     )
 
     # print(json.dumps(metadata_files_by_qtr["2026 Q1"], indent=4, sort_keys=True, default=str))
@@ -144,6 +192,24 @@ def _main() -> None:
         print(f"{curr_qtr_str}: {date_min.isoformat()} - {date_max.isoformat()}")
 
         prev_year = curr_qtr_str[:4]
+
+    if args.state_file:
+        state_for_disk: dict[str, str | dict[str, list[str]]] = {
+            'latest_metadata_version': program_state['latest_metadata_version'],
+            'binned_metadata': {},
+        }
+
+        for curr_qtr_str in reversed(sorted(metadata_files_by_qtr)):
+            sorted_dates: list[datetime.date] = sorted(metadata_files_by_qtr[curr_qtr_str])
+            file_strings: list[str] = [
+                sorted_dates[0].isoformat(),
+                sorted_dates[-1].isoformat(),
+            ]
+
+            state_for_disk['binned_metadata'][curr_qtr_str] = file_strings
+
+        with open(args.state_file, "w") as f:
+            json.dump(state_for_disk, f, indent=4, sort_keys=True)
 
 
 if __name__ == "__main__":

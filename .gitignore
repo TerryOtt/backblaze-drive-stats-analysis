@@ -5,3 +5,4 @@
 __pycache__/
 .venv/
 *.xlsx
+*_state.json
