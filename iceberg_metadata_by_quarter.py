@@ -63,8 +63,13 @@ def _bin_metadata_by_qtr(b2_access_key: str,
         binned_metadata: dict[str, set[datetime.date]] = {}
 
     # Crack each JSON metadata open and read its contents
-    print("Pulling update date for all metadata files that exist:")
+    printed_search_string: bool = False
+
     for metadata_file in metadata_files:
+        if not printed_search_string:
+            print("Pulling update date for all metadata files that exist:")
+            printed_search_string = True
+
         base_filename: str = pathlib.Path(metadata_file).name
 
         # Read from S3
@@ -74,7 +79,6 @@ def _bin_metadata_by_qtr(b2_access_key: str,
 
         metadata_file_date: datetime.date = datetime.datetime.fromtimestamp(
             parsed_metadata["last-updated-ms"] / 1000.0 ).date()
-
 
         print(f"\t{base_filename}: {metadata_file_date.isoformat()}")
 
@@ -150,7 +154,7 @@ def _main() -> None:
                     for date_index, _  in enumerate(program_state['binned_metadata'][curr_qtr_str]):
                         program_state['binned_metadata'][curr_qtr_str][date_index] = \
                             datetime.date.fromisoformat(program_state['binned_metadata'][curr_qtr_str][date_index])
-                print(f"Read state for metadata versions up to {program_state['latest_metadata_version']}")
+                print(f"\nRead state for metadata versions up to {program_state['latest_metadata_version']}")
 
         else:
             program_state = {}
@@ -165,7 +169,7 @@ def _main() -> None:
     )
     end_time: float = time.perf_counter()
 
-    print(f"\nFound {len(metadata_files):,} metadata files in {end_time - start_time:.01f} seconds")
+    print(f"\nFound {len(metadata_files):,} Iceberg metadata files in {end_time - start_time:.01f} seconds")
 
     metadata_files_by_qtr: dict[str, set[datetime.date]] = _bin_metadata_by_qtr(
         args.b2_access_key,
@@ -181,6 +185,7 @@ def _main() -> None:
     prev_year: str | None = None
 
     print()
+    print("Quarterly date ranges for metadata:\n")
 
     for curr_qtr_str in reversed(sorted(metadata_files_by_qtr)):
         sorted_dates = sorted(metadata_files_by_qtr[curr_qtr_str])
@@ -189,7 +194,7 @@ def _main() -> None:
 
         if prev_year and curr_qtr_str[:4] != prev_year:
             print()
-        print(f"{curr_qtr_str}: {date_min.isoformat()} - {date_max.isoformat()}")
+        print(f"\t{curr_qtr_str}: {date_min.isoformat()} - {date_max.isoformat()}")
 
         prev_year = curr_qtr_str[:4]
 
