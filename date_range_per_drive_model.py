@@ -128,7 +128,7 @@ def _get_smart_drive_model_mappings(smart_drive_model_names_series: polars.Serie
         polars.col("drive_model_name_smart").map_batches(_create_normalized_model_name_series,
                                                          return_dtype=polars.String).alias(
             "drive_model_name_normalized")
-    )
+    ).sort(by="drive_model_name_normalized")
 
     normalized_drive_model_name_count: int = smart_drive_model_mappings_df.get_column(
         "drive_model_name_normalized" ).unique().len()
@@ -183,6 +183,7 @@ def _get_date_ranges_per_drive_model(
         original_source_lazyframe: polars.LazyFrame,
         smart_model_name_mappings_dataframe: polars.DataFrame) -> polars.DataFrame:
 
+    raise NotImplementedError("Whoops no brains here yet")
 
 
 def _main() -> None:
@@ -215,9 +216,6 @@ def _main() -> None:
 
     processing_duration: float = time.perf_counter() - processing_start
     print(f"\nETL pipeline total processing time: {processing_duration:.01f} seconds\n")
-
-
-
 
 
 if __name__ == "__main__":
