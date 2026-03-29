@@ -92,32 +92,6 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _get_source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
-    source_lazyframe: polars.LazyFrame = backblaze_drive_stats_data.source_lazyframe(args)
-    # print(source_lazyframe.collect_schema())
-
-    # Reduce to columns we care about
-    source_lazyframe = source_lazyframe.select(
-        polars.col("model").alias("model_name"),
-        polars.col("date")
-    ).group_by(
-        "model_name"
-    ).agg(
-        polars.col("date").min().alias("first_seen"),
-        polars.col("date").min().alias("last_seen"),
-    ).sort(
-        "first_seen",
-        "last_seen",
-        descending=True,
-    )
-
-    # print(source_lazyframe.collect_schema())
-
-    print("\tCompleted")
-
-    return source_lazyframe
-
-
 def _get_smart_drive_model_mappings(smart_drive_model_names_series: polars.Series) -> polars.DataFrame:
     print( etl_pipeline.next_stage_banner() )
 
@@ -179,11 +153,72 @@ def _create_normalized_model_name_series( drive_models_name_smart_series: polars
     return model_names_normalized_series
 
 
+def _get_source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
+    lf: polars.LazyFrame = backblaze_drive_stats_data.source_lazyframe(args).select(
+        polars.col("model").alias("model_name"),
+        polars.col("date")
+    )
+
+    return lf
+
 def _get_date_ranges_per_drive_model(
         original_source_lazyframe: polars.LazyFrame,
         smart_model_name_mappings_dataframe: polars.DataFrame) -> polars.DataFrame:
 
-    raise NotImplementedError("Whoops no brains here yet")
+    print(etl_pipeline.next_stage_banner())
+
+    print("\tMaterializing dataframe for date ranges per drive model...")
+
+    operation_start: float = time.perf_counter()
+
+    # Get drives with min/max date
+    drive_dates: polars.DataFrame = original_source_lazyframe.select(
+        polars.col("model_name"),
+        polars.col("date")
+    ).join(
+        smart_model_name_mappings_dataframe.lazy(),
+        left_on="model_name",
+        right_on="drive_model_name_smart"
+    ).group_by(
+        "drive_model_name_normalized"
+    ).agg(
+        polars.col("date").min().alias("first_seen_date"),
+        polars.col("date").max().alias("last_seen_date"),
+    ).with_columns(
+        polars.concat_str(
+            [
+                polars.col("first_seen_date").dt.year(),
+                polars.col("first_seen_date").dt.quarter(),
+            ],
+            separator=" Q"
+        ).alias("first_seen"),
+
+        polars.concat_str(
+            [
+                polars.col("last_seen_date").dt.year(),
+                polars.col("last_seen_date").dt.quarter(),
+            ],
+            separator=" Q"
+        ).alias("last_seen"),
+    ).select(
+        "drive_model_name_normalized",
+        "first_seen",
+        "last_seen",
+    ).sort(
+        "first_seen",
+        "last_seen",
+        descending=True,
+    ).collect()
+
+    operation_end: float = time.perf_counter()
+    operation_duration: float = operation_end - operation_start
+
+    # How many unique drive models and how much time?
+    print( f"\t\tMaterialized data in {operation_duration:.01f} seconds")
+
+    print(drive_dates)
+
+    raise NotImplementedError("not done yet")
 
 
 def _main() -> None:
@@ -206,10 +241,6 @@ def _main() -> None:
 
     # Can delete SMART drive model name series as its no longer used
     del smart_drive_model_names
-
-    print(etl_pipeline.next_stage_banner())
-
-    print(smart_model_name_mappings_dataframe)
 
     date_ranges_per_drive_model: polars.DataFrame = _get_date_ranges_per_drive_model(
         original_source_lazyframe, smart_model_name_mappings_dataframe)
