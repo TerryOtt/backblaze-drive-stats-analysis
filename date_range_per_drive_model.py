@@ -128,7 +128,7 @@ def _get_smart_drive_model_names(args: argparse.Namespace,
 
     # We want all unique drive model names found in the source file which match one of the drive model regexes
     operation_start: float = time.perf_counter()
-    print("\tRetrieving unique candidate SMART drive model names from Polars...")
+    print("\tRetrieving unique SMART drive model names from Polars...")
     drive_models_smart_series: polars.Series = original_source_lazyframe.filter(
         polars.col("model_name").str.contains(multi_regex_pattern)
     ).select(
@@ -138,7 +138,7 @@ def _get_smart_drive_model_names(args: argparse.Namespace,
     operation_duration: float = operation_end - operation_start
 
     # How many unique drive models and how much time?
-    print( f"\t\tRetrieved {len(drive_models_smart_series):,} candidate SMART drive model names in "
+    print( f"\t\tRetrieved {len(drive_models_smart_series):,} SMART drive model names in "
         f"{operation_duration:.01f} seconds")
 
     return drive_models_smart_series
@@ -226,7 +226,7 @@ def _main() -> None:
 
     etl_pipeline.create_pipeline(
         (
-            "Retrieve candidate SMART drive model names",
+            "Retrieve SMART drive model names",
             "Create mapping table for SMART model name -> normalized model name...",
             "Create report of drives by date ranges seen",
         )
