@@ -201,7 +201,7 @@ def _get_date_ranges_per_drive_model(
             separator=" Q"
         ).alias("last_seen"),
     ).select(
-        "drive_model_name_normalized",
+        polars.col("drive_model_name_normalized").alias("drive_model"),
         "first_seen",
         "last_seen",
     ).sort(
