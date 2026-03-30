@@ -1,4 +1,5 @@
 import argparse
+import datetime
 import json
 import time
 import polars
@@ -180,7 +181,7 @@ def _get_date_ranges_per_drive_model(
         left_on="model_name",
         right_on="drive_model_name_smart"
     ).group_by(
-        "drive_model_name_normalized"
+        "drive_model_name_normalized",
     ).agg(
         polars.col("date").min().alias("first_seen_date"),
         polars.col("date").max().alias("last_seen_date"),
@@ -204,10 +205,11 @@ def _get_date_ranges_per_drive_model(
         polars.col("drive_model_name_normalized").alias("drive_model"),
         "first_seen",
         "last_seen",
+        "last_seen_date",
     ).sort(
         "first_seen",
-        "last_seen",
-        descending=True,
+        "drive_model",
+        descending=[True, False],
     ).collect()
 
     operation_end: float = time.perf_counter()
@@ -216,9 +218,9 @@ def _get_date_ranges_per_drive_model(
     # How many unique drive models and how much time?
     print( f"\t\tMaterialized data in {operation_duration:.01f} seconds")
 
-    print(drive_dates)
+    # print(drive_dates)
 
-    raise NotImplementedError("not done yet")
+    return drive_dates
 
 
 def _main() -> None:
@@ -244,6 +246,32 @@ def _main() -> None:
 
     date_ranges_per_drive_model: polars.DataFrame = _get_date_ranges_per_drive_model(
         original_source_lazyframe, smart_model_name_mappings_dataframe)
+
+    print("\nDrives by date introduced:")
+
+    # Find the longest drive model name
+    longest_model_name_length: int = date_ranges_per_drive_model.select(
+        polars.col("drive_model").str.len_chars().max()
+    ).item()
+    # print(f"Longest length: {longest_model_name_length}")
+
+    # Find the latest seen date (i.e., drive is still actively deployed)
+    drive_still_deployed_date: datetime.date = date_ranges_per_drive_model.select(
+        polars.col("last_seen_date").max()
+    ).item()
+
+    prev_first_seen: str | None = None
+    for curr_drive_model_row in date_ranges_per_drive_model.iter_rows(named=True):
+        if curr_drive_model_row['first_seen'] != prev_first_seen:
+            print(f"\n\t{curr_drive_model_row['first_seen']}")
+            prev_first_seen = curr_drive_model_row['first_seen']
+
+        if curr_drive_model_row['last_seen_date'] == drive_still_deployed_date:
+            drive_last_seen_str = "(currently deployed)"
+        else:
+            drive_last_seen_str = f"(removed from use: {curr_drive_model_row['last_seen']})"
+
+        print(f"\t\t{curr_drive_model_row['drive_model']:{longest_model_name_length}}  {drive_last_seen_str}")
 
     processing_duration: float = time.perf_counter() - processing_start
     print(f"\nETL pipeline total processing time: {processing_duration:.01f} seconds\n")
