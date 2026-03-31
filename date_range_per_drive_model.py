@@ -3,58 +3,8 @@ import datetime
 import json
 import time
 import polars
-import re
 
 import backblaze_drive_stats_data
-import etl_pipeline
-
-
-def _normalize_drive_model_name(raw_drive_model: str) -> str:
-    # Tokenize to see if we have manufacturer -- split with no params uses multi-whitespace as separator,
-    #   so we get some nice trim and whitespace collapse
-    model_tokens: list[str] = raw_drive_model.split()
-
-    if not 1 <= len(model_tokens) <= 2:
-        raise ValueError(f"Drive model name '{raw_drive_model}' did not result in 1 or 2 tokens")
-
-    models_to_mfrs: dict[str, str] = {
-        r'ST\d+'    : 'Seagate',
-        r'WU[HS]72' : 'WDC/HGST',
-    }
-
-    expected_mfr_strings: set[str] = {
-        'WDC/HGST',
-        'Seagate',
-        'Toshiba',
-        'WDC',
-    }
-
-    # Figure out the manufacturer if there wasn't on00e
-    if len(model_tokens) == 1:
-        for curr_regex in models_to_mfrs:
-            if re.match(curr_regex, model_tokens[0]):
-                return f"{models_to_mfrs[curr_regex]} {model_tokens[0]}"
-
-        # If we get here, we didn't get a match and puke out
-        raise ValueError(f"Cannot determine mfr from model string: {raw_drive_model}")
-
-    # Two token cases
-
-    # Do some mfr name mappings
-    name_mappings: dict[str, str] = {
-        "TOSHIBA"   : "Toshiba",
-        "HGST"      : "WDC/HGST",
-        "WDC"       : "WDC/HGST",
-    }
-    if model_tokens[0] in name_mappings:
-        model_tokens[0] = name_mappings[model_tokens[0]]
-
-    if model_tokens[0] not in expected_mfr_strings:
-        raise ValueError(f"Drive mfr {model_tokens[0]} not recognized")
-
-    normalized_drive_model_name: str = " ".join(model_tokens)
-
-    return normalized_drive_model_name
 
 
 def _parse_args() -> argparse.Namespace:
@@ -93,119 +43,81 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _get_smart_drive_model_mappings(smart_drive_model_names_series: polars.Series) -> polars.DataFrame:
-    print( etl_pipeline.next_stage_banner() )
-
-    smart_drive_model_mappings_df: polars.DataFrame = smart_drive_model_names_series.to_frame()
-
-    # Add column with normalized drive model name
-    smart_drive_model_mappings_df: polars.DataFrame = smart_drive_model_mappings_df.with_columns(
-        polars.col("drive_model_name_smart").map_batches(_create_normalized_model_name_series,
-                                                         return_dtype=polars.String).alias(
-            "drive_model_name_normalized")
-    ).sort(by="drive_model_name_normalized")
-
-    normalized_drive_model_name_count: int = smart_drive_model_mappings_df.get_column(
-        "drive_model_name_normalized" ).unique().len()
-
-    print(f"\t{smart_drive_model_names_series.len()} SMART drive model names -> {normalized_drive_model_name_count} "
-        "normalized drive model names" )
-
-    return smart_drive_model_mappings_df
-
-
-def _get_smart_drive_model_names(args: argparse.Namespace,
-                                 original_source_lazyframe: polars.LazyFrame) -> polars.Series:
-
-    print(etl_pipeline.next_stage_banner())
-
+def _get_source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
+    # Read in drive model regexes and use them to filter rows coming in from Iceberg in the lazyframe query plan
     with open(args.drive_patterns_json, "r") as json_handle:
         drive_model_patterns: list[str] = json.load(json_handle)
-    print(f"\tRetrieved {len(drive_model_patterns):,} regexes for SMART drive model names from "
+    print(f"\nRetrieved {len(drive_model_patterns):,} regexes for SMART drive model names from "
         f"\"{args.drive_patterns_json}\"")
 
     multi_regex_pattern: str = "|".join(drive_model_patterns)
     # print(f"multi regex pattern: {multi_regex_pattern}")
 
-    # We want all unique drive model names found in the source file which match one of the drive model regexes
-    operation_start: float = time.perf_counter()
-    print("\tRetrieving unique SMART drive model names from Polars...")
-    drive_models_smart_series: polars.Series = original_source_lazyframe.filter(
-        polars.col("model_name").str.contains(multi_regex_pattern)
-    ).select(
-        "model_name"
-    ).collect().get_column("model_name").unique().sort().rename("drive_model_name_smart")
-    operation_end: float = time.perf_counter()
-    operation_duration: float = operation_end - operation_start
-
-    # How many unique drive models and how much time?
-    print( f"\t\tRetrieved {len(drive_models_smart_series):,} SMART drive model names in "
-        f"{operation_duration:.01f} seconds")
-
-    return drive_models_smart_series
-
-
-def _create_normalized_model_name_series( drive_models_name_smart_series: polars.Series ) -> polars.Series:
-    normalized_names: list[str] = []
-    for smart_model_name in drive_models_name_smart_series:
-        normalized_names.append(_normalize_drive_model_name(smart_model_name))
-    model_names_normalized_series: polars.Series = polars.Series("model_name_normalized", normalized_names)
-
-    return model_names_normalized_series
-
-
-def _get_source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
     lf: polars.LazyFrame = backblaze_drive_stats_data.source_lazyframe(args).select(
         polars.col("model").alias("model_name"),
         polars.col("date")
+    ).filter(
+        polars.col("model_name").str.contains(multi_regex_pattern)
     )
 
     return lf
 
-def _get_date_ranges_per_drive_model(
-        original_source_lazyframe: polars.LazyFrame,
-        smart_model_name_mappings_dataframe: polars.DataFrame) -> polars.DataFrame:
 
-    print(etl_pipeline.next_stage_banner())
+def _get_date_ranges_per_drive_model(original_source_lazyframe: polars.LazyFrame) -> polars.DataFrame:
 
-    print("\tMaterializing dataframe for date ranges per drive model...")
+    print("\nCreating dataframe with date ranges per drive model...")
 
     operation_start: float = time.perf_counter()
 
-    # Get drives with min/max date
-    drive_dates: polars.DataFrame = original_source_lazyframe.select(
-        polars.col("model_name"),
-        polars.col("date")
-    ).join(
-        smart_model_name_mappings_dataframe.lazy(),
-        left_on="model_name",
-        right_on="drive_model_name_smart"
-    ).group_by(
-        "drive_model_name_normalized",
+    drive_dates: polars.DataFrame = original_source_lazyframe.group_by(
+        "model_name",
     ).agg(
         polars.col("date").min().alias("first_seen_date"),
         polars.col("date").max().alias("last_seen_date"),
+
+    # Add normalized drive model column
+    ).with_columns(
+        polars.col(
+            "model_name"
+        ).str.replace(
+            r"^.*(ST\d{2}000NM[0-9A-Z]{4})$", r"Seagate $1"
+        ).str.replace(
+            r"^.*([HW]U[HS]72\d{4}[A-Z0-9]{6})$", r"WDC/HGST $1"
+        ).str.replace(
+            r"^\s*(?:Toshiba|TOSHIBA)\s+(MG\d{2}[A-Z0-9]{7})$", r"Toshiba $1"
+        ).alias("drive_model_name_normalized")
+
+    # Regroup by normalized name
+    ).group_by(
+            "drive_model_name_normalized",
+    ).agg(
+        polars.col("first_seen_date").min().alias("first_seen_date_norm"),
+        polars.col("last_seen_date").max().alias("last_seen_date_norm"),
+
+    # Add columns for min/max quarter
     ).with_columns(
         polars.concat_str(
             [
-                polars.col("first_seen_date").dt.year(),
-                polars.col("first_seen_date").dt.quarter(),
+                polars.col("first_seen_date_norm").dt.year(),
+                polars.col("first_seen_date_norm").dt.quarter(),
             ],
             separator=" Q"
         ).alias("first_seen"),
 
         polars.concat_str(
             [
-                polars.col("last_seen_date").dt.year(),
-                polars.col("last_seen_date").dt.quarter(),
+                polars.col("last_seen_date_norm").dt.year(),
+                polars.col("last_seen_date_norm").dt.quarter(),
             ],
             separator=" Q"
-        ).alias("last_seen"),
+        ).alias("last_seen")
+
+    # Filter down to just the columns we care about
     ).select(
         polars.col("drive_model_name_normalized").alias("drive_model"),
         "first_seen",
         "last_seen",
-        "last_seen_date",
+        polars.col("last_seen_date_norm").alias("last_seen_date"),
     ).sort(
         "first_seen",
         "drive_model",
@@ -226,34 +138,13 @@ def _get_date_ranges_per_drive_model(
 def _main() -> None:
     processing_start: float = time.perf_counter()
 
-    etl_pipeline.create_pipeline(
-        (
-            "Retrieve SMART drive model names",
-            "Create mapping table for SMART model name -> normalized model name...",
-            "Create report of drives by date ranges seen",
-        )
-    )
-
     args: argparse.Namespace = _parse_args()
     original_source_lazyframe: polars.LazyFrame = _get_source_lazyframe(args)
 
-    smart_drive_model_names: polars.Series = _get_smart_drive_model_names(args, original_source_lazyframe)
-
-    smart_model_name_mappings_dataframe: polars.DataFrame = _get_smart_drive_model_mappings(smart_drive_model_names)
-
-    # Can delete SMART drive model name series as its no longer used
-    del smart_drive_model_names
-
     date_ranges_per_drive_model: polars.DataFrame = _get_date_ranges_per_drive_model(
-        original_source_lazyframe, smart_model_name_mappings_dataframe)
+        original_source_lazyframe)
 
     print("\nDrives by date introduced:")
-
-    # Find the longest drive model name
-    longest_model_name_length: int = date_ranges_per_drive_model.select(
-        polars.col("drive_model").str.len_chars().max()
-    ).item()
-    # print(f"Longest length: {longest_model_name_length}")
 
     # Find the latest seen date (i.e., drive is still actively deployed)
     drive_still_deployed_date: datetime.date = date_ranges_per_drive_model.select(
@@ -271,7 +162,9 @@ def _main() -> None:
         else:
             drive_last_seen_str = f"(removed from use: {curr_drive_model_row['last_seen']})"
 
-        print(f"\t\t{curr_drive_model_row['drive_model']:{longest_model_name_length}}  {drive_last_seen_str}")
+        mfr, model = curr_drive_model_row['drive_model'].split(" ")
+
+        print(f"\t\t{mfr:8} {model:16} {drive_last_seen_str}")
 
     processing_duration: float = time.perf_counter() - processing_start
     print(f"\nETL pipeline total processing time: {processing_duration:.01f} seconds\n")
