@@ -27,9 +27,9 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "boto3", specifier = ">=1.42.68" },
-    { name = "boto3-stubs", specifier = ">=1.42.68" },
-    { name = "polars", specifier = ">=1.39.0" },
+    { name = "boto3", specifier = ">=1.42.83" },
+    { name = "boto3-stubs", specifier = ">=1.42.83" },
+    { name = "polars", specifier = ">=1.39.3" },
     { name = "pyarrow", specifier = ">=23.0.1" },
     { name = "pyiceberg", specifier = ">=0.11.1" },
     { name = "s3fs", specifier = ">=0.4.2" },
