@@ -70,7 +70,7 @@ def _add_mfr_and_model_columns(incoming_lf: polars.LazyFrame) -> polars.LazyFram
         ).str.replace(
             r"^.*\s*[HW]U[HS]72\d{4}[A-Z0-9]{6}$", "WDC/HGST"
         ).str.replace(
-            r"^.*\s*MG\d{2}[A-Z0-9]{7}$", r"Toshiba"
+            r"^.*\s*MG\d{2}[A-Z0-9]{7,}$", r"Toshiba"
         ).alias("drive_model_normalized_mfr"),
 
         polars.col(
@@ -97,6 +97,8 @@ def _get_models_per_mfr(lf: polars.LazyFrame) -> polars.DataFrame:
     ).agg(
         polars.col("date").min().alias("first_seen_date"),
         polars.col("date").max().alias("last_seen_date"),
+    ).with_columns(
+        (polars.col("last_seen_date") == polars.col("last_seen_date").max()).alias("deployed_currently")
     )
 
     models_per_mfr: polars.DataFrame = _add_mfr_and_model_columns(
@@ -126,21 +128,23 @@ def _get_models_per_mfr(lf: polars.LazyFrame) -> polars.DataFrame:
     ).agg(
         polars.col("first_seen").min().alias("first_seen_normalized"),
         polars.col("last_seen").max().alias("last_seen_normalized"),
-        polars.col("last_seen_date").max().alias("last_seen_date")
+        # polars.col("deployed_currently").any().alias("deployed_currently_agg"),
     # Filter down to just the columns we care about
     ).select(
         "drive_model_normalized_mfr",
         polars.col("first_seen_normalized").alias("first_seen"),
         polars.col("last_seen_normalized").alias("last_seen"),
+    #     polars.col("deployed_currently_agg").alias("deployed_currently"),
         "drive_model_normalized_model",
-        "last_seen_date",
     ).sort(
         "drive_model_normalized_mfr",
         "first_seen",
         "last_seen",
         "drive_model_normalized_model",
 
-        descending=[False, True, True, False],
+        descending=[False, True, True, False]
+    ).with_columns(
+        (polars.col("last_seen") == polars.col("last_seen").max()).alias("deployed_currently")
     ).collect()
 
     operation_end: float = time.perf_counter()
@@ -151,26 +155,25 @@ def _get_models_per_mfr(lf: polars.LazyFrame) -> polars.DataFrame:
     return models_per_mfr
 
 
-def _display_output(date_ranges_per_drive_model: polars.DataFrame) -> None:
-    # Find the latest seen date (i.e., drive is still actively deployed)
-    drive_still_deployed_date: datetime.date = date_ranges_per_drive_model.select(
-        polars.col("last_seen_date").max()
-    ).item()
-
+def _display_output(drive_per_mfr: polars.DataFrame) -> None:
+    prev_mfr: str | None = None
     prev_first_seen: str | None = None
-    for curr_drive_model_row in date_ranges_per_drive_model.iter_rows(named=True):
-        if curr_drive_model_row['first_seen'] != prev_first_seen:
-            print(f"\n\t{curr_drive_model_row['first_seen']}")
-            prev_first_seen = curr_drive_model_row['first_seen']
+    for drive_per_mfr_row in drive_per_mfr.iter_rows(named=True):
+        if drive_per_mfr_row['drive_model_normalized_mfr'] != prev_mfr:
+            print(f"\n{drive_per_mfr_row['drive_model_normalized_mfr']}")
+            prev_mfr = drive_per_mfr_row['drive_model_normalized_mfr']
+            prev_first_seen = None
 
-        if curr_drive_model_row['last_seen_date'] == drive_still_deployed_date:
-            drive_last_seen_str = "(currently deployed)"
+        if drive_per_mfr_row['first_seen'] != prev_first_seen:
+            print(f"\n\t{drive_per_mfr_row['first_seen']}")
+            prev_first_seen = drive_per_mfr_row['first_seen']
+
+        if drive_per_mfr_row['deployed_currently']:
+            deployed_str = "currently deployed"
         else:
-            drive_last_seen_str = f"(removed from use: {curr_drive_model_row['last_seen']})"
+            deployed_str = f"last seen: {drive_per_mfr_row['last_seen']}"
 
-        mfr, model = curr_drive_model_row['drive_model'].split(" ")
-
-        print(f"\t\t{mfr:8} {model:16} {drive_last_seen_str}")
+        print(f"\t\t{drive_per_mfr_row['drive_model_normalized_model']:16} ({deployed_str})")
 
 
 def _main() -> None:
@@ -183,10 +186,10 @@ def _main() -> None:
     # print(lf_with_mfr_model.collect())
 
     models_per_mfr: polars.DataFrame = _get_models_per_mfr(original_source_lazyframe)
-    print(models_per_mfr)
+    # print(models_per_mfr)
 
-    # print("\nDrive models by mfr:")
-    # _display_output(models_per_mfr)
+    print("\nDrive models by mfr:")
+    _display_output(models_per_mfr)
 
     processing_duration: float = time.perf_counter() - processing_start
     print(f"\nETL pipeline total processing time: {processing_duration:.01f} seconds\n")
