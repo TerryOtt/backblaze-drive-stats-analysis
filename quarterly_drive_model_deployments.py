@@ -1,0 +1,171 @@
+import argparse
+import json
+import time
+import polars
+
+import backblaze_drive_stats_data
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Get first/most recent dates a drive has been seen")
+
+    default_s3_endpoint: str = "https://s3.us-west-004.backblazeb2.com"
+    default_b2_bucket_name: str = "drivestats-iceberg"
+    default_b2_region: str = "us-west-004"
+    default_table_path: str = "drivestats"
+
+    parser.add_argument("--s3-endpoint",
+                        default=default_s3_endpoint,
+                        help=f"S3 Endpoint (default: \"{default_s3_endpoint}\")")
+
+    parser.add_argument("--b2-region",
+                        default=default_b2_region,
+                        help=f"B2 Region (default: \"{default_b2_region}\")")
+
+    parser.add_argument("--bucket-name",
+                        default=default_b2_bucket_name,
+                        help=f"B2 Bucket Name (default: \"{default_b2_bucket_name}\")")
+
+    parser.add_argument("--table-path",
+                        default=default_table_path,
+                        help=f"B2 Bucket Table Path (default: \"{default_table_path}\")")
+
+    default_deploy_count_min: int = 500
+    parser.add_argument("--deploy-count-min",
+                        default=default_deploy_count_min,
+                        help=f"Minimum quarterly deploy count to display (default: {default_deploy_count_min})")
+
+    parser.add_argument('drive_patterns_json', help='Path to JSON with drive regexes')
+
+    #parser.add_argument("input_parquet_file", help="Path to parquet file we read from")
+
+    parser.add_argument("b2_access_key",
+                        help="Backblaze B2 Access Key")
+    parser.add_argument("b2_secret_access_key",
+                        help="Backblaze B2 Secret Access Key")
+
+    return parser.parse_args()
+
+
+def _get_source_lazyframe(args: argparse.Namespace) -> polars.LazyFrame:
+    # Read in drive model regexes and use them to filter rows coming in from Iceberg in the lazyframe query plan
+    with open(args.drive_patterns_json, "r") as json_handle:
+        drive_model_patterns: list[str] = json.load(json_handle)
+    print(f"\nRetrieved {len(drive_model_patterns):,} regexes for SMART drive model names from "
+        f"\"{args.drive_patterns_json}\"")
+
+    multi_regex_pattern: str = "|".join(drive_model_patterns)
+    # print(f"multi regex pattern: {multi_regex_pattern}")
+
+    return backblaze_drive_stats_data.source_lazyframe(args).select(
+        polars.col("model").alias("model_name"),
+        "serial_number",
+        "date"
+    ).filter(
+        polars.col("model_name").str.contains(multi_regex_pattern)
+    )
+
+
+def _add_mfr_and_model_columns(incoming_lf: polars.LazyFrame) -> polars.LazyFrame:
+    return incoming_lf.with_columns(
+        polars.col(
+            "model_name"
+        ).str.replace(
+            r"^.*\s*ST\d{2}000NM[0-9A-Z]{4}$", "Seagate"
+        ).str.replace(
+            r"^.*\s*[HW]U[HS]72\d{4}[A-Z0-9]{6}$", "WDC/HGST"
+        ).str.replace(
+            r"^.*\s*MG\d{2}[A-Z0-9]{7,}$", r"Toshiba"
+        ).alias("drive_model_normalized_mfr"),
+
+        polars.col(
+            "model_name"
+        ).str.split(
+            " "
+        ).list.last().alias("drive_model_normalized_model")
+    )
+
+def _get_model_deployments_per_qtr(lf: polars.LazyFrame, args: argparse.Namespace) -> polars.DataFrame:
+
+    print("\nCreating dataframe with deployments per quarter...")
+
+    operation_start: float = time.perf_counter()
+
+    lf = lf.group_by(
+        "model_name",
+        "serial_number",
+    ).agg(
+        polars.concat_str(
+            [
+                polars.col("date").min().dt.year(),
+                polars.col("date").min().dt.quarter(),
+            ],
+            separator=" Q"
+        ).alias("deployed_year_quarter"),
+    )
+
+    drive_deployed_per_quarter: polars.DataFrame = _add_mfr_and_model_columns(
+        lf
+    ).select(
+        "deployed_year_quarter",
+        "drive_model_normalized_mfr",
+        "drive_model_normalized_model",
+        "serial_number",
+    ).group_by(
+        "deployed_year_quarter",
+        "drive_model_normalized_mfr",
+        "drive_model_normalized_model",
+    ).agg(
+        polars.col("serial_number").count().alias("drives_deployed_this_qtr")
+    ).filter(
+        polars.col("drives_deployed_this_qtr").ge(args.deploy_count_min)
+    ).sort(
+        "deployed_year_quarter",
+        "drives_deployed_this_qtr",
+        "drive_model_normalized_mfr",
+        "drive_model_normalized_model",
+
+        descending=[True, True, False, False]
+    ).collect()
+
+    operation_end: float = time.perf_counter()
+    operation_duration: float = operation_end - operation_start
+
+    print( f"\t\tMaterialized data in {operation_duration:.01f} seconds")
+
+    return drive_deployed_per_quarter
+
+
+def _display_output(drive_deployments_per_quarter: polars.DataFrame) -> None:
+    prev_qtr: str | None = None
+    for drive_deployments_per_quarter_row in drive_deployments_per_quarter.iter_rows(named=True):
+        if drive_deployments_per_quarter_row['deployed_year_quarter'] != prev_qtr:
+            print(f"\n\t{drive_deployments_per_quarter_row['deployed_year_quarter']}")
+            prev_qtr = drive_deployments_per_quarter_row['deployed_year_quarter']
+
+        model_str: str = f"{drive_deployments_per_quarter_row['drive_model_normalized_mfr']:8}  " + \
+                         f"{drive_deployments_per_quarter_row['drive_model_normalized_model']:16}"
+
+        print(f"\t\t{model_str}: {drive_deployments_per_quarter_row['drives_deployed_this_qtr']:7,}")
+
+
+def _main() -> None:
+    processing_start: float = time.perf_counter()
+
+    args: argparse.Namespace = _parse_args()
+    original_source_lazyframe: polars.LazyFrame = _get_source_lazyframe(args)
+
+    model_deployments_per_quarter: polars.DataFrame = _get_model_deployments_per_qtr(original_source_lazyframe,
+                                                                                     args)
+    # print(models_per_qtr)
+
+    print(f"\nDrive model deployments per quarter (filtered to >= {args.deploy_count_min:,} drives per model, "
+          "modify filter with --min-deploy-count):")
+    _display_output(model_deployments_per_quarter)
+
+    processing_duration: float = time.perf_counter() - processing_start
+    print(f"\nETL pipeline total processing time: {processing_duration:.01f} seconds\n")
+
+
+if __name__ == "__main__":
+    _main()
