@@ -138,15 +138,26 @@ def _get_model_deployments_per_qtr(lf: polars.LazyFrame, args: argparse.Namespac
 
 def _display_output(drive_deployments_per_quarter: polars.DataFrame) -> None:
     prev_qtr: str | None = None
+    drives_this_qtr: int = 0
     for drive_deployments_per_quarter_row in drive_deployments_per_quarter.iter_rows(named=True):
         if drive_deployments_per_quarter_row['deployed_year_quarter'] != prev_qtr:
+            if prev_qtr is not None:
+                print("\t\t                            -------")
+                print(f"\t\t                            {drives_this_qtr:7,}")
+
             print(f"\n\t{drive_deployments_per_quarter_row['deployed_year_quarter']}")
             prev_qtr = drive_deployments_per_quarter_row['deployed_year_quarter']
+            drives_this_qtr = 0
 
         model_str: str = f"{drive_deployments_per_quarter_row['drive_model_normalized_mfr']:8}  " + \
                          f"{drive_deployments_per_quarter_row['drive_model_normalized_model']:16}"
 
         print(f"\t\t{model_str}: {drive_deployments_per_quarter_row['drives_deployed_this_qtr']:7,}")
+
+        drives_this_qtr += drive_deployments_per_quarter_row['drives_deployed_this_qtr']
+
+    print("\t\t                            -------")
+    print(f"\t\t                            {drives_this_qtr:7,}")
 
 
 def _main() -> None:
