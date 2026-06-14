@@ -67,13 +67,36 @@ ETL pipeline total processing time: 36.2 seconds
 
 ## Runtime Data
  
-This section demonstrates the effects of various amounts of CPU and RAM
-resources when running this script.
+This section demonstrates the effects of various amounts of CPU, RAM, and network
+bandwidth resources when running this script.
 
 I _happened_ to test on AWS EC2 instances as it was convenient for me.
 
 Tests were performed in AWS's `us-west-1` region due to it being the lowest latency 
-region to the Backblaze B2 bucket where the Iceberg table is stored.
+region to the Backblaze B2 bucket where the Iceberg table is stored.G
 
-* **8 Graviton4 ARM64 vCPU Instances**
+* **8 vCPU Graviton4 ARM64 Instances**
   * **r8g.2xlarge** (8 C / 8 T CPU, 64 GB memory): 161 seconds
+* **16 vCPU Instances**
+  * **m8g.4xlarge** (16 C / 16 T CPU, 64 GB memory, up to 15 Gbps network): 120 seconds
+  * **r8g.4xlarge** (16 C / 16 T CPU, 128 GB memory, up to 15 Gbps network): 111 seconds
+* **32 vCPU Instances**
+  * **c8g.8xlarge** (32 C / 32 T CPU, 64 GB memory, 15 Gbps network): 91 seconds
+  * **c8gn.8xlarge** (32 C / 32 T CPU, 64 GB memory, 100 Gbps network): 67 seconds
+  * **m8g.8xlarge** (32 C / 32 T CPU, 128 GB memory, 15 Gbps network): 77 seconds
+  * **r8g.8xlarge** (32 C / 32 T CPU, 256 GB memory, 15 Gbps network): 74 seconds
+* **48 vCPU Instances**
+  * **c8g.12xlarge** (48 C / 48 T CPU, 96 GB memory, 22.5 Gbps network): 64 seconds
+  * **c8gn.12xlarge** (48 C / 48 T CPU, 96 GB memory, 150 Gbps network): 60 seconds
+  * **m8g.12xlarge** (48 C / 48 T CPU, 192 GB memory, 22.5 Gbps network): 61 seconds
+  * **r8g.12xlarge** (48 C / 48 T CPU, 384 GB memory, 22.5 Gbps network): 59 seconds
+* **64 vCPU Instances***
+  * **c8g.16xlarge** (64 C / 64 T CPU, 128 GB memory, 30 Gbps network): 54 seconds
+  * **c8gn.16xlarge** (64 C / 64 T CPU, 128 GB memory, 200 Gbps network): 53 seconds
+  * **m8g.16xlarge** (64 C / 64 T CPU, 256 GB memory, 30 Gbps network): 54 seconds
+  * **r8g.16xlarge** (64 C / 64 T CPU, 512 GB memory, 30 Gbps network): 54 seconds
+* **96 vCPU Instances**
+  * **c8g.24xlarge** (96 C / 96 T CPU, 192 GB memory, 40 Gbps network): 50 seconds
+  * **c8gn.24xlarge** (96 C / 96 T CPU. 192 GB memory, 300 Gbps network): 49 seconds
+  * **m8g.24xlarge** (96 C / 96 T CPU, 384 GB memory, 40 Gbps network): 50 seconds
+  * **r8g.24xlarge** (96 C / 96 T CPU, 768 GB memory, 40 Gbps network): 50 seconds
