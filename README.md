@@ -26,10 +26,10 @@ repositories, so it's left as an exercise for the reader.
 ### Installation Steps
 
 ```bash
-$ apt-get update
-$ apt-get -y upgrade
-$ apt-get -y install build-essential
-$ curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh
+$ sudo apt-get update
+$ sudo apt-get -y upgrade
+$ sudo apt-get -y install build-essential
+$ sudo curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh
 $ ./install-latest-python-env.sh
 ```
 
