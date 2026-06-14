@@ -27,10 +27,10 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "boto3", specifier = ">=1.42.86" },
-    { name = "boto3-stubs", specifier = ">=1.42.86" },
-    { name = "polars", specifier = ">=1.39.3" },
-    { name = "pyarrow", specifier = ">=23.0.1" },
+    { name = "boto3", specifier = ">=1.43.29" },
+    { name = "boto3-stubs", specifier = ">=1.43.29" },
+    { name = "polars", specifier = ">=1.41.2" },
+    { name = "pyarrow", specifier = ">=24.0.0" },
     { name = "pyiceberg", specifier = ">=0.11.1" },
     { name = "s3fs", specifier = ">=0.4.2" },
     { name = "xlsxwriter", specifier = ">=3.2.9" },
