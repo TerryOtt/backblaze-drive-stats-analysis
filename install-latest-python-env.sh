@@ -19,10 +19,10 @@ ${RM} -rf ./.venv
 ${ECHO} "  - Installing/upgrading uv Python to latest stable >= 3.14.0"
 ${UV} python upgrade --quiet ">=3.14"
 
-# Update pyproject.toml to latest version of all Python deps
-${ECHO} "  - Updating pyproject.toml with latest stable versions of all dependencies"
+# Update uv.lock with latest version of all Python deps
+${ECHO} "  - Updating uv.lock with latest stable versions of all dependencies"
 ${UV} lock --upgrade --quiet
 
-# Install newly-refreshed list of dep versions
-${ECHO} "  - Installing all dependencies in the newly-refreshed pyproject.toml"
+# Install newly-refreshed list of dep versions in uv.lock
+${ECHO} "  - Installing all dependencies in the newly-refreshed uv.lock"
 ${UV} sync --quiet
