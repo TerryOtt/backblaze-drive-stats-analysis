@@ -15,9 +15,9 @@ ${RM} -rf ~/.cache/uv
 ${ECHO} "  - Removing Python virtual environment if there is one"
 ${RM} -rf ./.venv
 
-# Update uv to latest Python 3.14
-${ECHO} "  - Upgrading uv Python to latest 3.14 patch version"
-${UV} python upgrade --quiet 3.14
+# Update uv to latest Python interpreter that's >= 3.14.0
+${ECHO} "  - Upgrading uv Python to latest release that's >= 3.14.0"
+${UV} python upgrade --quiet ">=3.14"
 
 # Update pyproject.toml to latest version of all Python deps
 ${ECHO} "  - Updating pyproject.toml with latest released versions of all dependencies"
