@@ -2,7 +2,7 @@
 
 ECHO="/usr/bin/echo"
 RM="/usr/bin/rm"
-UV="/home/ubuntu/.local/bin/uv"
+UV="/usr/local/bin/uv"
 
 ${ECHO}
 ${ECHO} "Updating uv Python environment...."
