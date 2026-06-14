@@ -6,13 +6,12 @@
 
 ### System Requirements
 
-1. a Python 3.x intepreter
-1. Python `pip` to install this script's Python dependencies
+1. sudo access (to install a C compiler and a system-wide version of uv)
 1. 64+ GB of memory (process will be killed by the OS due to memory exhaustion with less)
 1. Network access
 1. Permission to write to S3 destination (optional)
 
-I've tested on multiple architectures (both x86-64 amd ARM64) because, well, why not?
+The scripts have been tested on both x86-64 amd ARM64 architectures. 
 
 ### Backblaze B2 Bucket Credentials
 
