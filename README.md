@@ -72,11 +72,8 @@ resources when running this script.
 
 I _happened_ to test on AWS EC2 instances as it was convenient for me.
 
-Tests were performed in AWS's `us-west-2` region, as `us-west-2` is the lowest latency 
-region to the Backblaze data which offers `*8a` instances (currently only `m8a` 
-as of October 2025).
+Tests were performed in AWS's `us-west-1` region due to it being the lowest latency 
+region to the Backblaze B2 bucket where the Iceberg table is stored.
 
-* **m8a.4xlarge** (16 C / 16 T CPU, 64 GB memory): 76 seconds
-* **m8a.8xlarge** (32 C / 32 T CPU, 128 GB memory): 50 seconds
-* **m8a.12xlarge** (48 C / 48 T CPU, 192 GB memory): 39 seconds
-* **m8a.16xlarge** (64 C / 64 T CPU, 256 GB memory): 39 seconds
+* **8 Graviton4 ARM64 vCPU Instances**
+  * **r8g.2xlarge** (8 C / 8 T CPU, 64 GB memory): 161 seconds
