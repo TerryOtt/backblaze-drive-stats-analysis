@@ -1,6 +1,6 @@
 # backblaze-drive-stats-analysis
 
-**Updated 2025-11-02**
+**Updated 2026-06-14**
 
 ## Creating Quarterly AFR CSV
 
