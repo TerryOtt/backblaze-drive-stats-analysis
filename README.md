@@ -27,7 +27,7 @@ repositories, so it's left as an exercise for the reader.
 
 ```bash
 $ curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh
-$ ./upgrade-entire-python-env.sh
+$ ./install-entire-python-env.sh
 ```
 
 ### Running The Script
