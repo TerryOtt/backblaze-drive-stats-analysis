@@ -73,7 +73,7 @@ bandwidth resources when running this script.
 I _happened_ to test on AWS EC2 instances as it was convenient for me.
 
 Tests were performed in AWS's `us-west-1` region due to it being the lowest latency 
-region to the Backblaze B2 bucket where the Iceberg table is stored.G
+region to the Backblaze B2 bucket where the Iceberg table is stored.
 
 * **8 vCPU Graviton4 ARM64 Instances**
   * **r8g.2xlarge** (8 C / 8 T CPU, 64 GB memory): 161 seconds
